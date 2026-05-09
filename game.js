@@ -10,7 +10,7 @@
    CONST / CONFIG
    ============================================================= */
 const TILE = 64;                         // 每格像素大小（資產原生）
-const MAP_W = 28, MAP_H = 22;            // 地圖格數（28 * 64 = 1792）
+const MAP_W = 40, MAP_H = 30;            // 地圖格數（40 * 64 = 2560，撐滿桌機 1080p 寬螢幕）
 const WORLD_W = MAP_W * TILE;
 const WORLD_H = MAP_H * TILE;
 
