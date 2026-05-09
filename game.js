@@ -20,81 +20,41 @@ const RES_TYPES = ['gold', 'wood', 'ore', 'food', 'potion'];
 
 const SELL_PRICE = { wood: 2, ore: 5, food: 1, potion: 12 };
 
-const STARTING_RES = { gold: 80, wood: 40, ore: 0, food: 30, potion: 0 };
+const STARTING_RES = { gold: 100, wood: 0, ore: 0, food: 20, potion: 0 };
 
-/* 建築定義 ----------------------------------------------------- */
+/* 建築定義（v1.5 精簡：只留主城 + 農舍 + 市場）-------------------- */
 const BUILDINGS = {
   townhall: {
-    name: '主城', desc: '王國的核心，儲存所有資源與糧食。',
-    cost: { wood: 0, gold: 0 }, size: { w: 3, h: 2 },
+    name: '主城', desc: '王國的核心，儲存所有資源。',
+    cost: { gold: 0 }, size: { w: 2, h: 2 },
     capacity: 0, recruits: null,
-    sprite: 'house_main',
+    tint: null, scale: 1.0,
   },
   farm: {
-    name: '農舍', desc: '種植稻米生產糧食。可雇用農夫。',
-    cost: { wood: 30, gold: 20 }, size: { w: 2, h: 2 },
+    name: '農舍', desc: '雇用農夫種植糧食。',
+    cost: { gold: 40 }, size: { w: 2, h: 2 },
     capacity: 2, recruits: 'farmer',
-    sprite: 'house_farm',
-  },
-  lumberyard: {
-    name: '伐木場', desc: '採集師會去森林砍樹搬回木材。',
-    cost: { wood: 50, gold: 30 }, size: { w: 2, h: 2 },
-    capacity: 2, recruits: 'gatherer',
-    sprite: 'house_wood',
-  },
-  mine: {
-    name: '礦坑', desc: '採礦師到山區挖礦石。',
-    cost: { wood: 80, gold: 50 }, size: { w: 2, h: 2 },
-    capacity: 2, recruits: 'miner',
-    sprite: 'house_mine',
-  },
-  alchemy: {
-    name: '藥水房', desc: '藥水師調配恢復血量的藥水。',
-    cost: { wood: 60, ore: 20, gold: 60 }, size: { w: 2, h: 2 },
-    capacity: 1, recruits: 'alchemist',
-    sprite: 'house_alch',
+    tint: 'rgba(120,200,80,0.18)',     // 淡綠
+    scale: 0.85,
   },
   market: {
-    name: '市場', desc: '把資源賣成金幣的交易所。',
-    cost: { wood: 40, gold: 30 }, size: { w: 2, h: 2 },
+    name: '市場', desc: '把糧食賣成金幣。',
+    cost: { gold: 60 }, size: { w: 2, h: 2 },
     capacity: 0, recruits: null,
-    sprite: 'house_market',
+    tint: 'rgba(220,140,60,0.20)',     // 暖橘
+    scale: 0.80,
   },
 };
 
-/* NPC 職業定義 ------------------------------------------------- */
+/* NPC 職業定義（v1.5：只留農夫）---------------------------------- */
 const JOBS = {
   farmer: {
     name: '農夫', emoji: '🌾', color: '#e8b73a',
     workAnim: 'hoe',
-    output: { food: 4 },               // 一次工作循環產出
-    workSeconds: 6,                    // 完成一次工作要多久
-    targetType: 'soil',                // 工作目標類型（soil/tree/rock/bush/lab）
-    recruitCost: { gold: 20, food: 10 },
-  },
-  gatherer: {
-    name: '採集師', emoji: '🌳', color: '#5fa84e',
-    workAnim: 'axe',
-    output: { wood: 3, food: 1 },
-    workSeconds: 5,
-    targetType: 'tree',
-    recruitCost: { gold: 25, food: 10 },
-  },
-  miner: {
-    name: '採礦師', emoji: '⛏', color: '#7a8c9c',
-    workAnim: 'axe',
-    output: { ore: 2 },
-    workSeconds: 7,
-    targetType: 'rock',
-    recruitCost: { gold: 35, food: 15 },
-  },
-  alchemist: {
-    name: '藥水師', emoji: '⚗', color: '#a86bc8',
-    workAnim: 'water',
-    output: { potion: 1 },
-    workSeconds: 8,
-    targetType: 'lab',
-    recruitCost: { gold: 60, food: 20, ore: 5 },
+    output: { food: 4 },
+    workSeconds: 6,
+    targetType: 'soil',
+    recruitCost: { gold: 15, food: 8 },
   },
 };
 
@@ -120,9 +80,8 @@ const IMG_MANIFEST = (() => {
       }
     }
   }
-  // Buildings (tilesets)
-  m.house_set     = './assets/buildings/House.png';
-  m.house_decor   = './assets/buildings/House Decoration.png';
+  // Buildings — v1.5 用乾淨的 farmhouse.png 為單一基底（148x292，含煙囪、磚窗、門、水桶）
+  m.farmhouse     = './assets/buildings/farmhouse.png';
   // Tiles
   m.grass         = './assets/tiles/Grass.png';
   m.hills         = './assets/tiles/Hills.png';
@@ -237,76 +196,7 @@ class World {
     // 全圖預設草地
     for (let i = 0; i < this.tiles.length; i++) this.tiles[i] = 0;
 
-    // 北側森林（樹叢密集）：y < 6, x 散佈
-    for (let y = 0; y < 6; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        if (Math.random() < 0.32) {
-          this.objects.push({ kind: 'decor_tree', x: x*TILE+rand(8,24), y: y*TILE+rand(8,24) });
-        }
-      }
-    }
-    // 可採集樹（在森林層下緣，玩家容易進入）
-    for (let i = 0; i < 14; i++) {
-      const tx = randI(2, MAP_W-3);
-      const ty = randI(0, 7);
-      if (this._anyResAtTile(tx, ty)) continue;
-      this.resources.push({
-        kind: 'tree', tx, ty,
-        x: tx*TILE + 32, y: ty*TILE + 56,
-        hp: 3, maxHp: 3,
-        depleted: false, respawnAt: 0,
-      });
-    }
-
-    // 東側山岩（採礦）：x > MAP_W-6, y > 4
-    for (let y = 4; y < MAP_H; y++) {
-      for (let x = MAP_W-6; x < MAP_W; x++) {
-        if (Math.random() < 0.25) this.setTile(x, y, 3); // 石礫地
-      }
-    }
-    // 礦點
-    for (let i = 0; i < 10; i++) {
-      const tx = randI(MAP_W-5, MAP_W-2);
-      const ty = randI(6, MAP_H-2);
-      if (this._anyResAtTile(tx, ty)) continue;
-      this.resources.push({
-        kind: 'rock', tx, ty,
-        x: tx*TILE + 32, y: ty*TILE + 48,
-        hp: 4, maxHp: 4,
-        depleted: false, respawnAt: 0,
-      });
-    }
-
-    // 西側河流（從上往下）+ 橋
-    const riverX = 4;
-    for (let y = 0; y < MAP_H; y++) {
-      this.setTile(riverX, y, 1);
-      if (Math.random() < 0.5) this.setTile(riverX-1, y, 1);
-      if (Math.random() < 0.5) this.setTile(riverX+1, y, 1);
-    }
-    // 橋
-    this.setTile(riverX-1, Math.floor(MAP_H/2), 2);
-    this.setTile(riverX,   Math.floor(MAP_H/2), 2);
-    this.setTile(riverX+1, Math.floor(MAP_H/2), 2);
-
-    // 西邊蘑菇林（採集師也吃這個）
-    for (let i = 0; i < 8; i++) {
-      const tx = randI(0, riverX-2);
-      const ty = randI(8, MAP_H-2);
-      if (this._anyResAtTile(tx, ty)) continue;
-      this.resources.push({
-        kind: 'bush', tx, ty,
-        x: tx*TILE + 32, y: ty*TILE + 48,
-        hp: 2, maxHp: 2,
-        depleted: false, respawnAt: 0,
-      });
-    }
-
-    // 南邊大草原 — 給農舍蓋稻田
-    // 蓋路：從中央延伸
     const cx = Math.floor(MAP_W/2), cy = Math.floor(MAP_H/2);
-    for (let dx = -3; dx <= 3; dx++) this.setTile(cx+dx, cy, 2);
-    for (let dy = -2; dy <= 2; dy++) this.setTile(cx, cy+dy, 2);
 
     // 中央放主城
     const townHall = new Building('townhall', cx-1, cy-1);
@@ -314,16 +204,46 @@ class World {
     this.buildings.push(townHall);
     this.townHall = townHall;
 
-    // 主城門口放一個 merchant（裝飾）
-    this.objects.push({ kind: 'decor_merchant', x: (cx+2)*TILE, y: (cy)*TILE + 16 });
+    // 中央放路徑石板（裝飾，不影響擺放）
+    for (let dx = -2; dx <= 2; dx++) this.setTile(cx+dx, cy+2, 2);
+    for (let dy = -1; dy <= 3; dy++) this.setTile(cx, cy+dy, 2);
 
-    // 南邊散落幾朵花、灌木裝飾
-    for (let i = 0; i < 30; i++) {
+    // 北側森林裝飾（離主城遠一點，玩家可在中段空地蓋農舍）
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        if (Math.random() < 0.28) {
+          this.objects.push({ kind: 'decor_tree', x: x*TILE+rand(8,24), y: y*TILE+rand(8,24) });
+        }
+      }
+    }
+
+    // 西側河流（從上往下）+ 橋
+    const riverX = 3;
+    for (let y = 0; y < MAP_H; y++) {
+      this.setTile(riverX, y, 1);
+      if (Math.random() < 0.4) this.setTile(riverX-1, y, 1);
+      if (Math.random() < 0.4) this.setTile(riverX+1, y, 1);
+    }
+    this.setTile(riverX-1, Math.floor(MAP_H/2), 2);
+    this.setTile(riverX,   Math.floor(MAP_H/2), 2);
+    this.setTile(riverX+1, Math.floor(MAP_H/2), 2);
+
+    // 東側山岩（純裝飾，未來戰鬥地形用）
+    for (let y = MAP_H-5; y < MAP_H; y++) {
+      for (let x = MAP_W-5; x < MAP_W; x++) {
+        if (Math.random() < 0.32) this.setTile(x, y, 3);
+      }
+    }
+
+    // 散落花、灌木、向日葵裝飾（南半部 + 東邊）
+    for (let i = 0; i < 50; i++) {
       const tx = randI(0, MAP_W-1);
-      const ty = randI(MAP_H-7, MAP_H-1);
+      const ty = randI(0, MAP_H-1);
       if (this.tileAt(tx, ty) !== 0) continue;
+      // 不要太靠近主城
+      if (Math.abs(tx-cx) < 4 && Math.abs(ty-cy) < 3) continue;
       const k = choice(['decor_flower','decor_bush','decor_grass']);
-      this.objects.push({ kind: k, x: tx*TILE+rand(0,TILE), y: ty*TILE+rand(0,TILE) });
+      this.objects.push({ kind: k, x: tx*TILE+rand(8,TILE-8), y: ty*TILE+rand(8,TILE-8) });
     }
   }
 
@@ -335,14 +255,27 @@ class World {
   canPlaceBuilding(type, tx, ty) {
     const def = BUILDINGS[type];
     if (!def) return false;
+    // 1. 邊界 / 水域 / 既有建築
     for (let dx = 0; dx < def.size.w; dx++) {
       for (let dy = 0; dy < def.size.h; dy++) {
         const x = tx + dx, y = ty + dy;
         if (!this.inBounds(x, y)) return false;
         const t = this.tileAt(x, y);
-        if (t === 1) return false; // 不能蓋水上
-        if (this._buildingAtTile(x, y)) return false;
+        if (t === 1) return false;                      // 水
+        if (this._buildingAtTile(x, y)) return false;   // 既有建築
       }
+    }
+    // 2. 不能蓋在裝飾物（樹、花、灌木、向日葵）上
+    const x0 = tx * TILE, y0 = ty * TILE;
+    const x1 = x0 + def.size.w * TILE;
+    const y1 = y0 + def.size.h * TILE;
+    for (const o of this.objects) {
+      // 物件中心在建築 footprint 內 → 擋
+      if (o.x >= x0 && o.x <= x1 && o.y >= y0 && o.y <= y1) return false;
+    }
+    // 3. 不能蓋在資源點上
+    for (const r of this.resources) {
+      if (r.x >= x0 && r.x <= x1 && r.y >= y0 && r.y <= y1) return false;
     }
     return true;
   }
@@ -689,11 +622,12 @@ class Game {
     this._loadSave();
     this._tickResRespawn = 0;
 
-    // 讓主城旁自帶 1 個農夫示範
-    if (this.world.npcs.length === 0) {
-      this._spawnDemoFarmer();
-    }
+    // v1.5 改成空世界開局：玩家自己蓋第一棟農舍 + 招募農夫
     this._renderResUI();
+    if (this.world.buildings.length === 1 && !this._loadedSave) {
+      // 沒讀檔 + 只有主城 → 給玩家提示
+      setTimeout(() => this.toast('💡 點下方「🔨 建造」蓋第一棟農舍'), 800);
+    }
 
     // BGM — 等使用者互動再播（瀏覽器 autoplay 政策）
     this._muted = localStorage.getItem('idleempire.muted') === '1';
@@ -737,15 +671,6 @@ class Game {
     this.ctx.imageSmoothingEnabled = false;
   }
 
-  _spawnDemoFarmer() {
-    // 試玩教學 NPC：先在主城旁站著
-    const npc = new NPC('farmer', this.world.townHall);
-    npc.workplace = null;  // 沒農舍前無事可做
-    npc.x = this.world.townHall.x + 80;
-    npc.y = this.world.townHall.y + 30;
-    this.world.npcs.push(npc);
-  }
-
   /* =============================================================
      輸入
      ============================================================= */
@@ -753,6 +678,7 @@ class Game {
     const c = this.canvas;
     let dragging = false, lastX = 0, lastY = 0, downX = 0, downY = 0, downTime = 0;
 
+    /* === 滑鼠事件（桌機） === */
     c.addEventListener('mousedown', (e) => {
       dragging = true; c.classList.add('dragging');
       lastX = e.clientX; lastY = e.clientY;
@@ -766,12 +692,14 @@ class Game {
       if (moved < 6 && dur < 300) this._onClick(e.clientX, e.clientY);
     });
     window.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      const dx = e.clientX - lastX, dy = e.clientY - lastY;
-      lastX = e.clientX; lastY = e.clientY;
-      this.camera.x -= dx / this.camera.zoom;
-      this.camera.y -= dy / this.camera.zoom;
-      this._clampCam();
+      if (dragging) {
+        const dx = e.clientX - lastX, dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        this.camera.x -= dx / this.camera.zoom;
+        this.camera.y -= dy / this.camera.zoom;
+        this._clampCam();
+      }
+      this._mouseScreen = { x: e.clientX, y: e.clientY };
     });
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -779,9 +707,67 @@ class Game {
       this.camera.zoom = clamp(z, this.camera.minZoom, this.camera.maxZoom);
       this._clampCam();
     }, { passive: false });
-    c.addEventListener('mousemove', (e) => {
-      this._mouseScreen = { x: e.clientX, y: e.clientY };
-    });
+
+    /* === Touch 事件（手機/平板） === */
+    let touchMode = null;        // 'pan' | 'pinch' | null
+    let pinchStartDist = 0;
+    let pinchStartZoom = 1;
+    let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+    const dist = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+    c.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        touchMode = 'pan';
+        const t = e.touches[0];
+        lastX = t.clientX; lastY = t.clientY;
+        downX = t.clientX; downY = t.clientY;
+        touchStartX = t.clientX; touchStartY = t.clientY;
+        touchStartTime = performance.now();
+      } else if (e.touches.length === 2) {
+        touchMode = 'pinch';
+        pinchStartDist = dist(e.touches[0], e.touches[1]);
+        pinchStartZoom = this.camera.zoom;
+      }
+    }, { passive: false });
+
+    c.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (touchMode === 'pan' && e.touches.length === 1) {
+        const t = e.touches[0];
+        const dx = t.clientX - lastX, dy = t.clientY - lastY;
+        lastX = t.clientX; lastY = t.clientY;
+        this.camera.x -= dx / this.camera.zoom;
+        this.camera.y -= dy / this.camera.zoom;
+        this._clampCam();
+        // mouseScreen 用於建造預覽
+        this._mouseScreen = { x: t.clientX, y: t.clientY };
+      } else if (touchMode === 'pinch' && e.touches.length === 2) {
+        const d = dist(e.touches[0], e.touches[1]);
+        const z = pinchStartZoom * (d / pinchStartDist);
+        this.camera.zoom = clamp(z, this.camera.minZoom, this.camera.maxZoom);
+        this._clampCam();
+      }
+    }, { passive: false });
+
+    c.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (touchMode === 'pan') {
+        // 是 tap 嗎？(短時間 + 沒移動)
+        const dur = performance.now() - touchStartTime;
+        // touchend 時 e.touches 已沒有原本那根
+        const last = e.changedTouches[0];
+        if (last) {
+          const moved = Math.hypot(last.clientX - touchStartX, last.clientY - touchStartY);
+          if (moved < 10 && dur < 300) this._onClick(last.clientX, last.clientY);
+        }
+      }
+      touchMode = e.touches.length >= 2 ? 'pinch' : (e.touches.length === 1 ? 'pan' : null);
+      if (touchMode === 'pinch') {
+        pinchStartDist = dist(e.touches[0], e.touches[1]);
+        pinchStartZoom = this.camera.zoom;
+      }
+    }, { passive: false });
 
     // ESC 取消擺放
     window.addEventListener('keydown', (e) => {
@@ -1299,46 +1285,57 @@ class Game {
 
   _renderBuildings() {
     const { ctx } = this;
-    // 從 House.png tileset 取小房子，每種建築取不同色塊（這 House.png 已經是組合圖）
-    const sheet = ASSETS.img.house_set;
+    // v1.5：所有建築共用乾淨的 farmhouse.png，靠 tint 色澤 + 大小 + 名牌區分
+    const sprite = ASSETS.img.farmhouse;
     for (const b of this.world.buildings) {
       const px = b.tx * TILE, py = b.ty * TILE;
-      // 我們把 House.png 切成 4 區（左上/右上/左下/右下）給不同建築用
-      // House.png = 448 x 320，切成 224x160 4 大塊
-      let sx = 0, sy = 0, sw = 224, sh = 160;
-      switch (b.type) {
-        case 'townhall':   sx = 0;    sy = 0;   sw = 224; sh = 160; break;
-        case 'farm':       sx = 0;    sy = 160; sw = 224; sh = 160; break;
-        case 'lumberyard': sx = 224;  sy = 0;   sw = 224; sh = 160; break;
-        case 'mine':       sx = 224;  sy = 160; sw = 224; sh = 160; break;
-        case 'alchemy':    sx = 0;    sy = 0;   sw = 224; sh = 160; break;
-        case 'market':     sx = 224;  sy = 0;   sw = 224; sh = 160; break;
-      }
       const dw = b.def.size.w * TILE;
       const dh = b.def.size.h * TILE;
-      // 建造中：半透明 + 鷹架/掃描效果
-      if (!b.isBuilt) {
-        ctx.save();
-        ctx.globalAlpha = 0.35 + 0.4 * b.progress;
-        if (sheet) ctx.drawImage(sheet, sx, sy, sw, sh, px, py - dh*0.2, dw, dh*1.2);
-        else { ctx.fillStyle = '#a06a3a'; ctx.fillRect(px, py, dw, dh); }
-        ctx.restore();
-        // 進度條
+
+      // 各建築使用同一張 sprite，但縮放比例不同
+      const scale = b.def.scale || 1.0;
+      const drawW = dw * scale * 1.05;
+      const drawH = dh * scale * 1.6;     // farmhouse 比寬還高
+      const drawX = px + dw/2 - drawW/2;
+      const drawY = py + dh - drawH + 8;  // 底部對齊 footprint 底邊
+
+      ctx.save();
+      // 建造中：半透明 + 進度
+      const built = b.isBuilt;
+      if (!built) ctx.globalAlpha = 0.4 + 0.5 * b.progress;
+
+      if (sprite) {
+        ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
+        // 上 tint 色澤（only if built）
+        if (built && b.def.tint) {
+          ctx.globalCompositeOperation = 'source-atop';
+          ctx.fillStyle = b.def.tint;
+          ctx.fillRect(drawX, drawY, drawW, drawH);
+          ctx.globalCompositeOperation = 'source-over';
+        }
+      } else {
+        ctx.fillStyle = '#a06a3a';
+        ctx.fillRect(px, py, dw, dh);
+      }
+      ctx.restore();
+
+      // 建造中進度條
+      if (!built) {
         ctx.fillStyle = '#000'; ctx.fillRect(px+8, py + dh - 12, dw-16, 8);
         ctx.fillStyle = '#e8b73a'; ctx.fillRect(px+8, py + dh - 12, (dw-16)*b.progress, 8);
-      } else {
-        if (sheet) ctx.drawImage(sheet, sx, sy, sw, sh, px, py - dh*0.2, dw, dh*1.2);
-        else { ctx.fillStyle = '#a06a3a'; ctx.fillRect(px, py, dw, dh); }
       }
-      // 建築名牌
+
+      // 建築名牌（含對應 emoji）
+      const emoji = b.type === 'townhall' ? '🏛' : b.type === 'farm' ? '🌾' : '💰';
+      const label = `${emoji} ${b.def.name}`;
       ctx.font = 'bold 16px "Noto Sans TC", "PingFang TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const tw = ctx.measureText(b.def.name).width + 16;
-      ctx.fillStyle = 'rgba(0,0,0,.65)';
-      ctx.fillRect(px + dw/2 - tw/2, py - 22, tw, 18);
+      const tw = ctx.measureText(label).width + 16;
+      ctx.fillStyle = 'rgba(0,0,0,.7)';
+      ctx.fillRect(px + dw/2 - tw/2, drawY - 22, tw, 20);
       ctx.fillStyle = '#fff';
-      ctx.fillText(b.def.name, px + dw/2, py - 13);
+      ctx.fillText(label, px + dw/2, drawY - 12);
     }
   }
 
@@ -1449,24 +1446,27 @@ class Game {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return;
       const d = JSON.parse(raw);
+      this._loadedSave = true;
       this.day = d.day || 1;
       this.dayTime = d.dayTime || 0.25;
       this.resources = { ...STARTING_RES, ...d.resources };
-      // 重建建築（除了 townhall 已存在）
+      // 重建建築（v1.5：忽略已移除的 lumberyard/mine/alchemy）
       this.world.buildings = this.world.buildings.filter(b => b.type === 'townhall');
       for (const bs of d.buildings || []) {
         if (bs.type === 'townhall') continue;
+        if (!BUILDINGS[bs.type]) continue;          // 跳過已移除的建築型別
         const b = this.world.placeBuilding(bs.type, bs.tx, bs.ty);
-        b.builtAt = nowSec() + (bs.builtAt || 0); // 還原進度
+        b.builtAt = nowSec() + (bs.builtAt || 0);
       }
-      // 重建 NPC
+      // 重建 NPC（v1.5：忽略已移除的職業）
       this.world.npcs = [];
       for (const ns of d.npcs || []) {
+        if (!JOBS[ns.job]) continue;                // 跳過已移除的職業
         const n = new NPC(ns.job, this.world.townHall);
         n.x = ns.x; n.y = ns.y; n.hp = ns.hp; n.hunger = ns.hunger;
         if (ns.workplaceIdx >= 0) {
           const wp = this.world.buildings[ns.workplaceIdx];
-          if (wp) { n.workplace = wp; wp.workers.push(n); }
+          if (wp && wp.def.recruits === ns.job) { n.workplace = wp; wp.workers.push(n); }
         }
         this.world.npcs.push(n);
       }
