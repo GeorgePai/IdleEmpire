@@ -676,10 +676,11 @@ class NPC {
     this.state = NPC_STATE.DEAD;
     this.setAnim('idle');
     game.toast(`💀 ${this.def.name} ${this.name} 倒下了…`);
-    // FIX: 死亡瞬間從 workplace.workers 移除，讓玩家可立刻補招募
+    // FIX: 死亡瞬間從 workplace.workers 移除
     if (this.workplace) {
       this.workplace.workers = this.workplace.workers.filter(w => w.id !== this.id);
     }
+    if (game.stats) game.stats.npcsDied++;
   }
 
   /* ---- render ---- */
@@ -717,10 +718,19 @@ class Game {
     this._tickResRespawn = 0;
     this._milestoneIdx = 0;
     this._lastMilestoneCheck = 0;
+    // v2.0 累積統計
+    this.stats = {
+      foodHarvested: 0,    // 累積收成糧食
+      goldEarned: 0,       // 累積金幣總收入（包含獎勵+賣糧）
+      npcsRecruited: 0,    // 累積招募
+      npcsDied: 0,         // 累積死亡
+      farmsBuilt: 0,       // 累積建造農地
+    };
+    this._gameStartedAt = nowSec();
+
     this._renderResUI();
     this._renderMilestone();
     setTimeout(() => this.toast('💡 點下方「🔨 建造」蓋一塊農地'), 800);
-    // 還沒蓋農地時，建造鈕脈動提示
     document.getElementById('buildBtn')?.classList.add('pulse');
 
     // BGM — 等使用者互動再播（瀏覽器 autoplay 政策）
@@ -1013,8 +1023,8 @@ class Game {
     setTimeout(() => playSfx('chop', 0.4), 200);
     if (type === 'farm') {
       document.getElementById('buildBtn')?.classList.remove('pulse');
+      if (this.stats) this.stats.farmsBuilt++;
     }
-    // 立即檢查里程碑（不必等 1 秒 tick）
     this._checkMilestones();
   }
 
@@ -1064,11 +1074,14 @@ class Game {
     }
     const lvLabel = b.level > 1 ? ` ${'⭐'.repeat(b.level)}` : '';
 
-    // 主城：可賣糧食換金幣（解 dead-end）
+    // 主城：賣糧食 + 統計面板
     let sellHtml = '';
     if (b.type === 'townhall') {
       const food = this.resources.food || 0;
-      const sellPrice = 2;        // 1 食 = 2 金
+      const sellPrice = 2;
+      const s = this.stats || {};
+      const farmCount = this.world.buildings.filter(x => x.type === 'farm').length;
+      const playMin = Math.floor((nowSec() - (this._gameStartedAt || 0)) / 60);
       sellHtml = `
         <h3>🏪 主城商店</h3>
         <p style="font-size:12px;color:#5a3a22">把多餘的糧食賣給路過商旅，1 糧 = ${sellPrice} 金幣</p>
@@ -1077,6 +1090,13 @@ class Game {
           <button class="actBtn" data-sell="10" ${food<10?'disabled':''} style="flex:1">賣 10 (+${sellPrice*10}⛁)</button>
           <button class="actBtn" data-sell="all" ${food<1?'disabled':''} style="flex:1">全賣 (+${food*sellPrice}⛁)</button>
         </div>
+        <h3 style="margin-top:14px">📊 王國統計</h3>
+        <div class="stat"><span>遊玩時間</span><span>${playMin} 分鐘</span></div>
+        <div class="stat"><span>累積收成</span><span>${s.foodHarvested||0} 🌾</span></div>
+        <div class="stat"><span>累積收入</span><span>${s.goldEarned||0} ⛁</span></div>
+        <div class="stat"><span>蓋過農地</span><span>${s.farmsBuilt||0} (現有 ${farmCount})</span></div>
+        <div class="stat"><span>招募農夫</span><span>${s.npcsRecruited||0}</span></div>
+        <div class="stat"><span>死亡人數</span><span>${s.npcsDied||0}</span></div>
       `;
     }
 
@@ -1145,6 +1165,7 @@ class Game {
     this._showBuildingPanel(b);
     this.toast(`✅ 招募了 ${JOBS[job].name} ${npc.name}`);
     playSfx('success', 0.4);
+    if (this.stats) this.stats.npcsRecruited++;
     this._checkMilestones();
   }
 
@@ -1251,8 +1272,12 @@ class Game {
     this.resources[k] = (this.resources[k] || 0) + v;
     this.flashRes(k, v, atX, atY);
     this._renderResUI();
-    // 資源達到某數量會觸發里程碑
     if (this._milestoneIdx < MILESTONES.length) this._checkMilestones();
+    // 累積統計
+    if (this.stats) {
+      if (k === 'food' && v > 0) this.stats.foodHarvested += v;
+      if (k === 'gold' && v > 0) this.stats.goldEarned += v;
+    }
   }
 
   flashRes(k, v, wx, wy) {
