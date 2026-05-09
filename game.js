@@ -28,16 +28,16 @@ const CROP_STAGES = 5;          // 0=空 / 1=嫩苗 / 2=抽穗 / 3=結實 / 4=�
 const CROP_GROW_SEC = 12;       // 每階段間隔（秒），共需 36 秒從種到熟
 const FARM_W = 4, FARM_H = 3;   // 農地大小（4 寬 × 3 高 = 12 格）
 
-/* 建築定義（v1.6：主城 + 農地）---------------------------------- */
+/* 建築定義 ---------------------------------- */
 const BUILDINGS = {
   townhall: {
-    name: '主城', desc: '王國的核心。',
+    name: '主城', desc: '王國中心，可賣糧換金。',
     cost: { gold: 0 }, size: { w: 2, h: 2 },
     capacity: 0, recruits: null,
     tint: null, scale: 0.95, isField: false,
   },
   farm: {
-    name: '農地', desc: '雇用農夫在田裡種稻。',
+    name: '農地', desc: '農夫在這裡種稻。',
     cost: { gold: 40 }, size: { w: FARM_W, h: FARM_H },
     capacity: 2, recruits: 'farmer',
     tint: null, isField: true,
@@ -54,16 +54,16 @@ const JOBS = {
   },
 };
 
-/* 里程碑（v2.0）：讓玩家有清楚的「下一步」目標 ---------------------- */
+/* 里程碑：清楚的下一步目標 ---------------------- */
 const MILESTONES = [
-  { id: 'first_farm',  name: '蓋第一塊農地',     check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 1, reward: { gold: 30 } },
-  { id: 'first_hire',  name: '招募第一個農夫',   check: (g) => g.world.npcs.length >= 1,                                   reward: { gold: 30 } },
-  { id: 'food_50',     name: '累積 50 糧食',     check: (g) => g.resources.food >= 50,                                     reward: { gold: 60 } },
-  { id: 'farms_3',     name: '蓋 3 塊農地',      check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 3,   reward: { gold: 100 } },
-  { id: 'farmers_5',   name: '招募 5 個農夫',    check: (g) => g.world.npcs.length >= 5,                                   reward: { gold: 150 } },
-  { id: 'gold_500',    name: '擁有 500 金幣',    check: (g) => g.resources.gold >= 500,                                    reward: { food: 100 } },
-  { id: 'food_500',    name: '累積 500 糧食',    check: (g) => g.resources.food >= 500,                                    reward: { gold: 300 } },
-  { id: 'farms_10',    name: '蓋 10 塊農地',     check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 10,  reward: { gold: 500 } },
+  { id: 'first_farm',  name: '蓋第一塊農地',  check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 1, reward: { gold: 30 } },
+  { id: 'first_hire',  name: '招募一個農夫',  check: (g) => g.world.npcs.length >= 1,                                  reward: { gold: 30 } },
+  { id: 'food_50',     name: '糧食達到 50',   check: (g) => g.resources.food >= 50,                                    reward: { gold: 60 } },
+  { id: 'farms_3',     name: '蓋滿 3 塊農地', check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 3,  reward: { gold: 100 } },
+  { id: 'farmers_5',   name: '農夫達到 5 人', check: (g) => g.world.npcs.length >= 5,                                  reward: { gold: 150 } },
+  { id: 'gold_500',    name: '金幣達到 500',  check: (g) => g.resources.gold >= 500,                                   reward: { food: 100 } },
+  { id: 'food_500',    name: '糧食達到 500',  check: (g) => g.resources.food >= 500,                                   reward: { gold: 300 } },
+  { id: 'farms_10',    name: '蓋滿 10 塊農地',check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 10, reward: { gold: 500 } },
 ];
 
 /* 建築升級成本與效果 -------------------------------------------- */
@@ -651,19 +651,27 @@ class NPC {
   _moveTo(target, dt, onArrive) {
     if (!target) { this.state = NPC_STATE.IDLE; return; }
     const dx = target.x - this.x, dy = target.y - this.y;
-    const d = Math.hypot(dx, dy);
+    const adx = Math.abs(dx), ady = Math.abs(dy);
     const arriveDist = 6;
-    if (d < arriveDist) { this.setAnim('idle'); onArrive(); return; }
+    if (adx < arriveDist && ady < arriveDist) {
+      this.setAnim('idle');
+      onArrive();
+      return;
+    }
     this.setAnim('walk');
-    const step = Math.min(d, this.speed * dt);
-    const ux = dx / d, uy = dy / d;
-    let nx = this.x + ux * step;
-    let ny = this.y + uy * step;
-    // 簡單避免水（只是把目標往旁邊推）
+    const step = this.speed * dt;
+    // v2.1：限制只走上下/左右（不斜線），優先走差距大的軸
+    let nx = this.x, ny = this.y;
+    if (adx >= ady) {
+      nx = this.x + Math.sign(dx) * Math.min(adx, step);
+      this.dir = dx > 0 ? 'right' : 'left';
+    } else {
+      ny = this.y + Math.sign(dy) * Math.min(ady, step);
+      this.dir = dy > 0 ? 'down' : 'up';
+    }
     nx = clamp(nx, 8, WORLD_W - 8);
     ny = clamp(ny, 8, WORLD_H - 8);
     this.x = nx; this.y = ny;
-    this._faceTowards(target.x, target.y);
   }
 
   _faceTowards(tx, ty) {
@@ -675,7 +683,7 @@ class NPC {
   _die(game) {
     this.state = NPC_STATE.DEAD;
     this.setAnim('idle');
-    game.toast(`💀 ${this.def.name} ${this.name} 倒下了…`);
+    game.toast(`${this.name} 倒下了`);
     // FIX: 死亡瞬間從 workplace.workers 移除
     if (this.workplace) {
       this.workplace.workers = this.workplace.workers.filter(w => w.id !== this.id);
@@ -730,7 +738,7 @@ class Game {
 
     this._renderResUI();
     this._renderMilestone();
-    setTimeout(() => this.toast('💡 點下方「🔨 建造」蓋一塊農地'), 800);
+    setTimeout(() => this.toast('點底下「建造」開始'), 800);
     document.getElementById('buildBtn')?.classList.add('pulse');
 
     // BGM — 等使用者互動再播（瀏覽器 autoplay 政策）
@@ -966,18 +974,18 @@ class Game {
       if (type === 'townhall') continue;
       const card = document.createElement('div');
       card.className = 'buildCard';
-      const cost = Object.entries(def.cost).map(([k, v]) => `${this._iconFor(k)} ${v}`).join('  ');
+      const cost = Object.entries(def.cost).map(([k, v]) => `${this._resName(k)} ${v}`).join('  ');
       const enough = this._canAfford(def.cost);
       if (!enough) card.classList.add('disabled');
       card.innerHTML = `
         <div class="info">
           <div class="name">${def.name}</div>
           <div class="desc">${def.desc}</div>
-          <div class="cost">花費：${cost}</div>
+          <div class="cost">需要：${cost}</div>
         </div>
       `;
       card.onclick = () => {
-        if (!enough) { this.toast('資源不足！'); return; }
+        if (!enough) { this.toast('金幣不夠'); return; }
         menu.classList.add('hidden');
         this._beginPlacement(type);
       };
@@ -1006,19 +1014,19 @@ class Game {
   }
   _tryPlaceBuilding(type, tx, ty) {
     if (!this.world.canPlaceBuilding(type, tx, ty)) {
-      this.toast('這裡蓋不了！');
+      this.toast('這裡不能蓋');
       return;
     }
     const def = BUILDINGS[type];
     if (!this._canAfford(def.cost)) {
-      this.toast('資源不足！');
+      this.toast('金幣不夠');
       return;
     }
     this._spend(def.cost);
     this.world.placeBuilding(type, tx, ty);
     this._cancelPlacement();
     this._renderResUI();
-    this.toast(`✅ ${def.name} 建造中…`);
+    this.toast(`${def.name} 建造中`);
     playSfx('chop', 0.5);
     setTimeout(() => playSfx('chop', 0.4), 200);
     if (type === 'farm') {
@@ -1043,36 +1051,36 @@ class Game {
     if (def.recruits) {
       const rj = JOBS[def.recruits];
       const recruitCost = rj.recruitCost;
-      const costStr = Object.entries(recruitCost).map(([k,v]) => `${this._iconFor(k)} ${v}`).join(' ');
+      const costStr = Object.entries(recruitCost).map(([k,v]) => `${this._resName(k)} ${v}`).join('  ');
       const canRec = this._canAfford(recruitCost) && b.workers.length < def.capacity && b.isBuilt;
-      workersHtml += `<h3>👥 員工 (${b.workers.length}/${def.capacity})</h3>`;
+      workersHtml += `<h3>員工　${b.workers.length} / ${def.capacity}</h3>`;
       for (const w of b.workers) {
         workersHtml += `<div class="npcCard" data-npc="${w.id}">
-          ${rj.emoji} ${w.name} · HP ${Math.round(w.hp)} · 飢餓 ${Math.round(w.hunger)}
+          ${w.name}　體力 ${Math.round(w.hp)}　飢餓 ${Math.round(w.hunger)}
         </div>`;
       }
       workersHtml += `<button class="actBtn" id="recruitBtn" ${canRec?'':'disabled'}>
         招募 ${rj.name}（${costStr}）
       </button>`;
     }
-    // v2.0：建築升級
+    // 建築升級
     let upgradeHtml = '';
     if (b.isBuilt && b.nextUpgrade) {
       const nu = b.nextUpgrade;
-      const costStr = Object.entries(nu.cost).map(([k,v]) => `${this._iconFor(k)} ${v}`).join(' ');
+      const costStr = Object.entries(nu.cost).map(([k,v]) => `${this._resName(k)} ${v}`).join('  ');
       const canUp = this._canAfford(nu.cost);
       const benefit = [];
-      if (nu.growMul && nu.growMul < 1) benefit.push(`成長 +${Math.round((1/nu.growMul - 1)*100)}%`);
-      if (nu.yieldBonus) benefit.push(`每收 +${nu.yieldBonus} 糧`);
+      if (nu.growMul && nu.growMul < 1) benefit.push(`成長速度 +${Math.round((1/nu.growMul - 1)*100)}%`);
+      if (nu.yieldBonus) benefit.push(`每收多 ${nu.yieldBonus} 糧`);
       upgradeHtml = `
-        <h3>⭐ 升級到 Lv${b.level + 1}</h3>
-        <div class="stat"><span>效果</span><span>${benefit.join(' / ')}</span></div>
+        <h3>升級到 Lv ${b.level + 1}</h3>
+        <div class="stat"><span>效果</span><span>${benefit.join('，')}</span></div>
         <button class="actBtn" id="upgradeBtn" ${canUp?'':'disabled'}>升級（${costStr}）</button>
       `;
     } else if (b.isBuilt && b.level >= 3) {
-      upgradeHtml = `<div class="stat" style="margin-top:12px"><span>等級</span><span>⭐⭐⭐ Lv 滿</span></div>`;
+      upgradeHtml = `<div class="stat" style="margin-top:12px"><span>等級</span><span>Lv 3（已滿）</span></div>`;
     }
-    const lvLabel = b.level > 1 ? ` ${'⭐'.repeat(b.level)}` : '';
+    const lvLabel = b.level > 1 ? `　Lv ${b.level}` : '';
 
     // 主城：賣糧食 + 統計面板
     let sellHtml = '';
@@ -1083,18 +1091,18 @@ class Game {
       const farmCount = this.world.buildings.filter(x => x.type === 'farm').length;
       const playMin = Math.floor((nowSec() - (this._gameStartedAt || 0)) / 60);
       sellHtml = `
-        <h3>🏪 主城商店</h3>
-        <p style="font-size:12px;color:#5a3a22">把多餘的糧食賣給路過商旅，1 糧 = ${sellPrice} 金幣</p>
+        <h3>賣糧食換金幣</h3>
+        <p style="font-size:12px;color:#5a3a22">1 糧食 換 ${sellPrice} 金幣</p>
         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-          <button class="actBtn" data-sell="1"  ${food<1?'disabled':''} style="flex:1">賣 1 (+${sellPrice}⛁)</button>
-          <button class="actBtn" data-sell="10" ${food<10?'disabled':''} style="flex:1">賣 10 (+${sellPrice*10}⛁)</button>
-          <button class="actBtn" data-sell="all" ${food<1?'disabled':''} style="flex:1">全賣 (+${food*sellPrice}⛁)</button>
+          <button class="actBtn" data-sell="1"  ${food<1?'disabled':''} style="flex:1">賣 1</button>
+          <button class="actBtn" data-sell="10" ${food<10?'disabled':''} style="flex:1">賣 10</button>
+          <button class="actBtn" data-sell="all" ${food<1?'disabled':''} style="flex:1">全賣</button>
         </div>
-        <h3 style="margin-top:14px">📊 王國統計</h3>
+        <h3 style="margin-top:14px">王國統計</h3>
         <div class="stat"><span>遊玩時間</span><span>${playMin} 分鐘</span></div>
-        <div class="stat"><span>累積收成</span><span>${s.foodHarvested||0} 🌾</span></div>
-        <div class="stat"><span>累積收入</span><span>${s.goldEarned||0} ⛁</span></div>
-        <div class="stat"><span>蓋過農地</span><span>${s.farmsBuilt||0} (現有 ${farmCount})</span></div>
+        <div class="stat"><span>累積收成</span><span>${s.foodHarvested||0} 糧食</span></div>
+        <div class="stat"><span>累積收入</span><span>${s.goldEarned||0} 金幣</span></div>
+        <div class="stat"><span>蓋過農地</span><span>${s.farmsBuilt||0}（現有 ${farmCount}）</span></div>
         <div class="stat"><span>招募農夫</span><span>${s.npcsRecruited||0}</span></div>
         <div class="stat"><span>死亡人數</span><span>${s.npcsDied||0}</span></div>
       `;
@@ -1102,7 +1110,7 @@ class Game {
 
     c.innerHTML = `
       <h2>${def.name}${lvLabel}</h2>
-      <div class="stat"><span>狀態</span><span>${b.isBuilt ? '✅ 完工' : `🔨 建造中 ${Math.round(b.progress*100)}%`}</span></div>
+      <div class="stat"><span>狀態</span><span>${b.isBuilt ? '完工' : `建造中 ${Math.round(b.progress*100)}%`}</span></div>
       <p style="font-size:13px;color:#5a3a22;margin:6px 0">${def.desc}</p>
       ${workersHtml}
       ${upgradeHtml}
@@ -1143,7 +1151,7 @@ class Game {
     if (!this._canAfford(nu.cost)) return this.toast('資源不足！');
     this._spend(nu.cost);
     b.level++;
-    this.toast(`✨ ${b.def.name} 升級到 Lv${b.level}！`);
+    this.toast(`${b.def.name} 升級到 Lv ${b.level}`);
     playSfx('success', 0.5);
     this._renderResUI();
     this._showBuildingPanel(b);
@@ -1153,8 +1161,8 @@ class Game {
     if (!b.def.recruits) return;
     const job = b.def.recruits;
     const cost = JOBS[job].recruitCost;
-    if (!this._canAfford(cost)) return this.toast('資源不足！');
-    if (b.workers.length >= b.def.capacity) return this.toast('已達上限！');
+    if (!this._canAfford(cost)) return this.toast('資源不夠');
+    if (b.workers.length >= b.def.capacity) return this.toast('員工已滿');
     this._spend(cost);
     const npc = new NPC(job, this.world.townHall);
     npc.workplace = b;
@@ -1163,7 +1171,7 @@ class Game {
     this.world.npcs.push(npc);
     this._renderResUI();
     this._showBuildingPanel(b);
-    this.toast(`✅ 招募了 ${JOBS[job].name} ${npc.name}`);
+    this.toast(`招募了 ${npc.name}`);
     playSfx('success', 0.4);
     if (this.stats) this.stats.npcsRecruited++;
     this._checkMilestones();
@@ -1173,10 +1181,10 @@ class Game {
     const panel = document.getElementById('sidePanel');
     const c = document.getElementById('sideContent');
     c.innerHTML = `
-      <h2>${n.def.emoji} ${n.def.name} · ${n.name}</h2>
-      <div class="stat"><span>HP</span><span>${Math.round(n.hp)}/${n.maxHp}</span></div>
+      <h2>${n.name}（${n.def.name}）</h2>
+      <div class="stat"><span>體力</span><span>${Math.round(n.hp)} / ${n.maxHp}</span></div>
       <div class="bar hp"><div style="width:${(n.hp/n.maxHp)*100}%"></div></div>
-      <div class="stat"><span>飢餓度</span><span>${Math.round(n.hunger)}/${n.maxHunger}</span></div>
+      <div class="stat"><span>飢餓度</span><span>${Math.round(n.hunger)} / ${n.maxHunger}</span></div>
       <div class="bar hunger"><div style="width:${(n.hunger/n.maxHunger)*100}%"></div></div>
       <div class="stat"><span>狀態</span><span>${this._stateLabel(n.state)}</span></div>
     `;
@@ -1185,14 +1193,14 @@ class Game {
 
   _stateLabel(s) {
     return ({
-      idle: '😴 待命',
-      goto_work: '🚶 前往工作',
-      working: '⚒ 工作中',
-      return: '🏠 返家',
-      deposit: '📦 儲存中',
-      go_home_hungry: '🍽 太餓了，回家',
-      eat: '🍞 吃飯',
-      dead: '💀 死亡',
+      idle: '待命中',
+      goto_work: '前往工作',
+      working: '工作中',
+      return: '返家',
+      deposit: '儲存中',
+      go_home_hungry: '太餓了',
+      eat: '吃飯',
+      dead: '已倒下',
     })[s] || s;
   }
 
@@ -1254,18 +1262,18 @@ class Game {
       el.querySelector('.val').textContent = Math.round(this.resources[k] || 0);
     });
     const dl = document.getElementById('dayLabel');
-    if (dl) dl.textContent = `Day ${this.day}`;
+    if (dl) dl.textContent = `第 ${this.day} 天`;
     const tl = document.getElementById('timeLabel');
     if (tl) tl.textContent = this._timeLabel();
   }
 
   _timeLabel() {
     const t = this.dayTime;
-    if (t < 0.2) return '🌙 深夜';
-    if (t < 0.35) return '🌅 早晨';
-    if (t < 0.6) return '☀ 中午';
-    if (t < 0.8) return '🌇 傍晚';
-    return '🌌 夜晚';
+    if (t < 0.2) return '深夜';
+    if (t < 0.35) return '早晨';
+    if (t < 0.6) return '中午';
+    if (t < 0.8) return '傍晚';
+    return '夜晚';
   }
 
   addResource(k, v, atX, atY) {
@@ -1282,7 +1290,7 @@ class Game {
 
   flashRes(k, v, wx, wy) {
     const sign = v > 0 ? '+' : '';
-    const txt = `${sign}${v} ${this._iconFor(k)}`;
+    const txt = `${sign}${v} ${this._resName(k)}`;
     let sx, sy;
     if (wx != null && wy != null) {
       const s = this.worldToScreen(wx, wy);
@@ -1319,7 +1327,7 @@ class Game {
         this.resources[k] = (this.resources[k] || 0) + v;
         this.flashRes(k, +v);
       }
-      this.toast(`🎯 達成：${m.name}！獲得獎勵`);
+      this.toast(`目標達成：${m.name}`);
       playSfx('success', 0.6);
       this._milestoneIdx++;
     }
@@ -1331,12 +1339,12 @@ class Game {
     const el = document.getElementById('milestone');
     if (!el) return;
     if (this._milestoneIdx >= MILESTONES.length) {
-      el.innerHTML = `<span style="opacity:.7">🏆 全部里程碑達成！</span>`;
+      el.innerHTML = `<span style="opacity:.7">所有目標達成</span>`;
       return;
     }
     const m = MILESTONES[this._milestoneIdx];
-    const rewardStr = Object.entries(m.reward || {}).map(([k,v]) => `+${v}${this._iconFor(k)}`).join(' ');
-    el.innerHTML = `<span class="ms-label">🎯 ${m.name}</span><span class="ms-reward">獎勵 ${rewardStr}</span>`;
+    const rewardStr = Object.entries(m.reward || {}).map(([k,v]) => `+${v} ${this._resName(k)}`).join('  ');
+    el.innerHTML = `<span class="ms-label">目標：${m.name}</span><span class="ms-reward">獎勵 ${rewardStr}</span>`;
   }
 
   /* =============================================================
@@ -1359,8 +1367,7 @@ class Game {
     this.dayTime += dt / 300;            // 5 分鐘一日
     if (this.dayTime >= 1) {
       this.dayTime -= 1; this.day++;
-      this.toast(`☀ 第 ${this.day} 天開始`);
-      this._save();
+      this.toast(`第 ${this.day} 天開始`);
     }
 
     // 建築：農地的作物自動成長
@@ -1537,15 +1544,14 @@ class Game {
         ctx.fillStyle = '#e8b73a'; ctx.fillRect(px+8, py + dh - 12, (dw-16)*b.progress, 8);
       }
 
-      // 名牌（主城上方 / 農地左上）
-      const emoji = b.type === 'townhall' ? '🏛' : '🌾';
-      const label = `${emoji} ${b.def.name}`;
-      ctx.font = 'bold 15px "Noto Sans TC", "PingFang TC", sans-serif';
+      // 名牌（純文字，無 emoji）
+      const label = b.def.name;
+      ctx.font = 'bold 14px "Noto Sans TC", "PingFang TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const tw = ctx.measureText(label).width + 14;
-      const labY = b.def.isField ? py - 12 : py - dh*0.6 - 8;
-      ctx.fillStyle = 'rgba(0,0,0,.7)';
+      const labY = b.def.isField ? py - 12 : py - dh*0.55 - 8;
+      ctx.fillStyle = 'rgba(0,0,0,.65)';
       ctx.fillRect(px + dw/2 - tw/2, labY - 9, tw, 18);
       ctx.fillStyle = '#fff';
       ctx.fillText(label, px + dw/2, labY);
@@ -1554,21 +1560,82 @@ class Game {
 
   _renderHouse(b, px, py, dw, dh, built) {
     const { ctx } = this;
-    const sprite = ASSETS.img.house || ASSETS.img.farmhouse;
-    if (!sprite) {
-      ctx.fillStyle = '#a06a3a'; ctx.fillRect(px, py, dw, dh);
-      return;
-    }
-    // 主城用 compact_house（aspect 1:1.33），整個建築自然撐滿 footprint
-    const scale = b.def.scale || 0.95;
-    const drawW = dw * scale;
-    const drawH = drawW * (sprite.height / sprite.width);
-    const drawX = px + (dw - drawW) / 2;
-    const drawY = py + dh - drawH + 8;
-
+    // v2.1：主城改用 canvas 程式繪製童話小屋（牆+屋頂+門+窗+煙囪），明顯像房子
     ctx.save();
     if (!built) ctx.globalAlpha = 0.4 + 0.5 * b.progress;
-    ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
+
+    const cx = px + dw/2;
+    const baseY = py + dh - 4;
+    const houseW = dw * 0.78;
+    const houseH = dh * 0.50;
+    const roofH = houseH * 0.68;
+    const roofOver = 6;
+
+    // 牆壁（米黃）+ 邊框
+    ctx.fillStyle = '#e0b888';
+    ctx.fillRect(cx - houseW/2, baseY - houseH, houseW, houseH);
+    ctx.strokeStyle = '#4a2a18';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx - houseW/2, baseY - houseH, houseW, houseH);
+
+    // 屋頂（紅褐三角形）
+    ctx.fillStyle = '#a04830';
+    ctx.beginPath();
+    ctx.moveTo(cx - houseW/2 - roofOver, baseY - houseH);
+    ctx.lineTo(cx, baseY - houseH - roofH);
+    ctx.lineTo(cx + houseW/2 + roofOver, baseY - houseH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // 屋頂上的橫條 (像瓦片紋路)
+    ctx.strokeStyle = '#7a3020';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      const yy = baseY - houseH - roofH * (1 - i*0.25);
+      const w  = (houseW + roofOver*2) * (i*0.25);
+      ctx.beginPath();
+      ctx.moveTo(cx - w/2, yy);
+      ctx.lineTo(cx + w/2, yy);
+      ctx.stroke();
+    }
+
+    // 煙囪
+    ctx.fillStyle = '#6a4028';
+    ctx.fillRect(cx + houseW * 0.22, baseY - houseH - roofH * 0.55, 10, 18);
+    ctx.strokeStyle = '#4a2a18';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cx + houseW * 0.22, baseY - houseH - roofH * 0.55, 10, 18);
+
+    // 門（中間）
+    const doorW = houseW * 0.28, doorH = houseH * 0.55;
+    ctx.fillStyle = '#5a3018';
+    ctx.fillRect(cx - doorW/2, baseY - doorH, doorW, doorH);
+    ctx.strokeRect(cx - doorW/2, baseY - doorH, doorW, doorH);
+    // 門把
+    ctx.fillStyle = '#e8c038';
+    ctx.fillRect(cx + doorW/2 - 5, baseY - doorH/2, 3, 3);
+
+    // 窗戶兩個（門兩邊）
+    const winW = houseW * 0.16, winH = houseH * 0.22;
+    const winY = baseY - houseH * 0.7;
+    ctx.fillStyle = '#a8d8e8';
+    ctx.fillRect(cx - houseW * 0.32, winY, winW, winH);
+    ctx.fillRect(cx + houseW * 0.16, winY, winW, winH);
+    ctx.strokeStyle = '#4a2a18';
+    ctx.strokeRect(cx - houseW * 0.32, winY, winW, winH);
+    ctx.strokeRect(cx + houseW * 0.16, winY, winW, winH);
+    // 十字框
+    ctx.beginPath();
+    ctx.moveTo(cx - houseW * 0.32 + winW/2, winY);
+    ctx.lineTo(cx - houseW * 0.32 + winW/2, winY + winH);
+    ctx.moveTo(cx - houseW * 0.32, winY + winH/2);
+    ctx.lineTo(cx - houseW * 0.32 + winW, winY + winH/2);
+    ctx.moveTo(cx + houseW * 0.16 + winW/2, winY);
+    ctx.lineTo(cx + houseW * 0.16 + winW/2, winY + winH);
+    ctx.moveTo(cx + houseW * 0.16, winY + winH/2);
+    ctx.lineTo(cx + houseW * 0.16 + winW, winY + winH/2);
+    ctx.stroke();
+
     ctx.restore();
   }
 
@@ -1660,14 +1727,14 @@ class Game {
 
       // HP / Hunger 條（站立中）
       this._renderNpcBars(n);
-      // 名字 + 職業 emoji（在頭頂）
-      ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
+      // 名字（純文字、不再有 emoji）
+      ctx.font = 'bold 12px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
-      const label = `${n.def.emoji} ${n.name}`;
+      const label = n.name;
       const lw = ctx.measureText(label).width + 10;
       ctx.fillStyle = 'rgba(0,0,0,.55)';
-      ctx.fillRect(n.x - lw/2, n.y - 88, lw, 18);
+      ctx.fillRect(n.x - lw/2, n.y - 86, lw, 16);
       ctx.fillStyle = '#fff';
       ctx.fillText(label, n.x, n.y - 75);
     }

@@ -22,25 +22,23 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; overflow: hidden; }
 
-/* 字體分工：中文用 Noto Sans TC（極清晰）、英數用 Pixelify Sans（保留像素風） */
+/* v2.1：字體 — 數字用 JetBrains Mono（2/8 完全分得清）、中文用 Noto Sans TC */
 body {
-  font-family: 'Pixelify Sans', 'Noto Sans TC',
+  font-family: 'JetBrains Mono', 'Noto Sans TC',
                -apple-system, 'PingFang TC', 'Microsoft JhengHei',
                'Segoe UI', sans-serif;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--c-text);
   background: #000;
   user-select: none;
   -webkit-font-smoothing: antialiased;
-  letter-spacing: .3px;
+  letter-spacing: .2px;
 }
 img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .hidden { display: none !important; }
 
-/* 工具類：純像素數字（資源計數、時鐘） */
-.pixfont { font-family: 'Pixelify Sans', 'Noto Sans TC', sans-serif; }
-/* 工具類：純中文清晰（內文敘述） */
-.cnfont { font-family: 'Noto Sans TC', -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
+.numfont { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+.cnfont { font-family: 'Noto Sans TC', -apple-system, 'PingFang TC', sans-serif; }
 
 /* ============================================================
    載入畫面
@@ -56,7 +54,7 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .loading-title {
   font-size: 56px; letter-spacing: 4px; color: #f4e2b8;
   text-shadow: 4px 4px 0 #2a1f17;
-  font-family: 'Pixelify Sans', sans-serif;
+  font-family: 'JetBrains Mono', sans-serif;
 }
 .loading-subtitle {
   font-size: 18px; color: #d8be84; margin: 8px 0 28px;
@@ -101,19 +99,24 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   z-index: 10;
 }
 #topBar .res {
-  display: flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 8px;
   background: var(--c-panel);
   border: 2px solid var(--c-border);
-  padding: 6px 12px;
-  font-size: 17px;
+  padding: 6px 14px;
   min-width: 92px;
   position: relative;
 }
-#topBar .res .icon { font-size: 18px; filter: grayscale(.05); }
+#topBar .res .lbl {
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 13px; font-weight: 700;
+  color: var(--c-border);
+  letter-spacing: .5px;
+}
 #topBar .res .val {
-  font-family: 'Pixelify Sans', sans-serif;
+  font-family: 'JetBrains Mono', monospace;
   font-variant-numeric: tabular-nums;
-  font-size: 19px;
+  font-size: 18px; font-weight: 700;
+  color: var(--c-text);
 }
 #topBar .res[data-res="gold"]   { background: #fff4cf; }
 #topBar .res[data-res="wood"]   { background: #f0d9b8; }
@@ -137,7 +140,7 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   color: var(--c-border); font-size: 13px;
 }
 #milestone .ms-reward {
-  font-family: 'Pixelify Sans', sans-serif;
+  font-family: 'JetBrains Mono', sans-serif;
   color: var(--c-accent); font-size: 12px;
 }
 @media (max-width: 768px) {
@@ -155,12 +158,12 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   display: flex; align-items: center; gap: 10px;
   font-size: 16px;
 }
-#dayInfo #dayLabel { font-family: 'Pixelify Sans', sans-serif; font-size: 18px; }
+#dayInfo #dayLabel { font-family: 'JetBrains Mono', sans-serif; font-size: 18px; }
 #dayInfo #timeLabel { color: var(--c-border); font-size: 14px; font-family: 'Noto Sans TC', sans-serif; }
 #speedBtn, #muteBtn {
   border: 2px solid var(--c-border);
   background: var(--c-panel);
-  padding: 5px 11px; font-family: 'Pixelify Sans', sans-serif; font-weight: 700;
+  padding: 5px 11px; font-family: 'JetBrains Mono', sans-serif; font-weight: 700;
   cursor: pointer; font-size: 16px;
 }
 #speedBtn:hover, #muteBtn:hover { background: #fff4cf; }
@@ -211,7 +214,7 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 #sidePanel h2 { font-size: 20px; margin-bottom: 8px; color: var(--c-border); border-bottom: 2px dashed var(--c-border-lite); padding-bottom: 6px; font-family: 'Noto Sans TC', sans-serif; letter-spacing: 1px; }
 #sidePanel h3 { font-size: 15px; margin: 10px 0 4px; font-family: 'Noto Sans TC', sans-serif; }
 #sidePanel .stat { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; font-family: 'Noto Sans TC', sans-serif; }
-#sidePanel .stat span:last-child { font-family: 'Pixelify Sans', sans-serif; font-size: 15px; }
+#sidePanel .stat span:last-child { font-family: 'JetBrains Mono', sans-serif; font-size: 15px; }
 #sidePanel .bar { background: #2a1f17; border: 2px solid var(--c-border); height: 12px; margin: 4px 0 8px; position: relative; }
 #sidePanel .bar > div { height: 100%; transition: width .2s; }
 #sidePanel .bar.hp > div { background: linear-gradient(90deg, #d65a3a, #f08858); }
@@ -282,7 +285,7 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .buildCard .info, .marketRow .info { flex: 1; }
 .buildCard .name, .marketRow .name { font-size: 17px; font-family: 'Noto Sans TC', sans-serif; }
 .buildCard .desc { font-size: 13px; color: var(--c-border-lite); font-family: 'Noto Sans TC', sans-serif; line-height: 1.4; margin: 3px 0; }
-.buildCard .cost, .marketRow .cost { font-size: 14px; color: var(--c-border); font-family: 'Pixelify Sans', sans-serif; }
+.buildCard .cost, .marketRow .cost { font-size: 14px; color: var(--c-border); font-family: 'JetBrains Mono', sans-serif; }
 .buildCard .preview { width: 56px; height: 56px; image-rendering: pixelated; }
 
 .marketRow .qtyBtn {
@@ -326,7 +329,7 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .floater {
   position: absolute;
   font-size: 17px; font-weight: 700;
-  font-family: 'Pixelify Sans', sans-serif;
+  font-family: 'JetBrains Mono', sans-serif;
   text-shadow: 1px 1px 0 #000, 2px 2px 0 #000, 0 0 4px rgba(0,0,0,.6);
   animation: floatUp 1.2s forwards;
   pointer-events: none;

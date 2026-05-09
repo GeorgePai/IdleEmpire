@@ -6,8 +6,8 @@
 <title>Idle Empire — 像素放置王國</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=28">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css?v=30">
 </head>
 <body>
   <!-- 載入畫面 -->
@@ -16,7 +16,7 @@
       <div class="loading-title">IDLE EMPIRE</div>
       <div class="loading-subtitle">像素放置王國</div>
       <div class="loading-bar"><div id="loadingFill"></div></div>
-      <div id="loadingStatus">準備中…</div>
+      <div id="loadingStatus">準備中</div>
     </div>
   </div>
 
@@ -24,20 +24,20 @@
   <div id="game" class="hidden">
     <canvas id="world"></canvas>
 
-    <!-- 頂部資源欄（v1.6：只留金幣與糧食） -->
+    <!-- 頂部資源欄（v2.1：純文字標籤、無 emoji） -->
     <div id="topBar">
-      <div class="res" data-res="gold" title="金幣"><span class="icon">⛁</span><span class="val">0</span></div>
-      <div class="res" data-res="food" title="糧食"><span class="icon">🌾</span><span class="val">0</span></div>
+      <div class="res" data-res="gold"><span class="lbl">金幣</span><span class="val">0</span></div>
+      <div class="res" data-res="food"><span class="lbl">糧食</span><span class="val">0</span></div>
 
       <div id="milestone"></div>
 
       <div class="spacer"></div>
 
       <div id="dayInfo">
-        <span id="dayLabel">Day 1</span>
+        <span id="dayLabel">第 1 天</span>
         <span id="timeLabel">早晨</span>
-        <button id="muteBtn" title="切換音樂">🔊</button>
-        <button id="speedBtn" title="切換遊戲速度">▶ 1x</button>
+        <button id="muteBtn" title="切換音樂">音</button>
+        <button id="speedBtn" title="切換遊戲速度">1x</button>
       </div>
     </div>
 
@@ -50,9 +50,9 @@
       <div id="sideContent"></div>
     </aside>
 
-    <!-- 底部建造選單（v1.6：只留建造） -->
+    <!-- 底部建造選單（v2.1：純文字） -->
     <div id="bottomBar">
-      <button class="bigBtn" id="buildBtn">🔨 建造</button>
+      <button class="bigBtn" id="buildBtn">建造</button>
     </div>
 
     <!-- 建造選單彈窗 -->
@@ -68,13 +68,13 @@
 
     <!-- 建造擺放提示 -->
     <div id="placementHint" class="hidden">
-      <span id="placementText">點擊空地擺放，按 ESC 取消</span>
+      <span id="placementText">點空地擺放，ESC 取消</span>
     </div>
 
     <!-- 警告浮窗 -->
     <div id="toast" class="hidden"></div>
   </div>
 
-  <script src="./game.js?v=28"></script>
+  <script src="./game.js?v=30"></script>
 </body>
 </html>
