@@ -713,6 +713,8 @@ class Game {
     this._renderResUI();
     this._renderMilestone();
     setTimeout(() => this.toast('💡 點下方「🔨 建造」蓋一塊農地'), 800);
+    // 還沒蓋農地時，建造鈕脈動提示
+    document.getElementById('buildBtn')?.classList.add('pulse');
 
     // BGM — 等使用者互動再播（瀏覽器 autoplay 政策）
     this._muted = localStorage.getItem('idleempire.muted') === '1';
@@ -999,8 +1001,12 @@ class Game {
     this._cancelPlacement();
     this._renderResUI();
     this.toast(`✅ ${def.name} 建造中…`);
-    playSfx('chop', 0.5);   // 建造音效（鋸木 / 敲打感）
+    playSfx('chop', 0.5);
     setTimeout(() => playSfx('chop', 0.4), 200);
+    // 蓋了第一塊農地後，停掉脈動提示
+    if (type === 'farm') {
+      document.getElementById('buildBtn')?.classList.remove('pulse');
+    }
   }
 
   _spend(cost) {
@@ -1512,6 +1518,14 @@ class Game {
           ctx.fillRect(px + cx*TILE, py + cy*TILE, TILE, TILE);
         }
       }
+    }
+    // v2.0：升級的農田有色澤加成（Lv2 微暖、Lv3 深褐肥沃）
+    if (built && b.level > 1) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = b.level === 2 ? 'rgba(180,140,80,0.18)' : 'rgba(120,80,40,0.30)';
+      ctx.fillRect(px, py, dw, dh);
+      ctx.restore();
     }
     if (!built) {
       // 建造中半透明覆蓋
