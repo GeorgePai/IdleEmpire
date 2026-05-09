@@ -403,14 +403,15 @@ class Building {
     return -1;
   }
 
-  // 自動成長：每 CROP_GROW_SEC 秒往上一階（直到成熟）
+  // 自動成長：每 interval 秒往上一階（每階段重設計時，FIX: 之前是累進間隔導致後期變慢）
   tickGrowth() {
     if (!this.crops) return;
     const now = nowSec();
     const interval = CROP_GROW_SEC * this.growMul;
     for (const c of this.crops) {
-      if (c.stage >= 1 && c.stage < 4 && now - c.plantedAt >= interval * c.stage) {
+      if (c.stage >= 1 && c.stage < 4 && now - c.plantedAt >= interval) {
         c.stage++;
+        c.plantedAt = now;       // 重設基準點
       }
     }
   }
@@ -450,7 +451,7 @@ class NPC {
     this.maxHp = 100;
     this.hp = 100;
     this.maxHunger = 100;
-    this.hunger = 80;
+    this.hunger = 100;          // FIX: 從滿開始（之前 80 + 飢餓快導致農夫卡循環）
     this.starveTimer = 0;
 
     this.state = NPC_STATE.IDLE;
@@ -477,7 +478,7 @@ class NPC {
     if (this.state === NPC_STATE.DEAD) return;
 
     // 飢餓 & HP
-    this.hunger -= dt * 1.6;       // 每秒掉 1.6
+    this.hunger -= dt * 0.8;       // FIX: 半速（從 1.6 → 0.8），給玩家更從容的調度時間
     if (this.hunger <= 0) {
       this.hunger = 0;
       this.starveTimer += dt;
@@ -675,6 +676,10 @@ class NPC {
     this.state = NPC_STATE.DEAD;
     this.setAnim('idle');
     game.toast(`💀 ${this.def.name} ${this.name} 倒下了…`);
+    // FIX: 死亡瞬間從 workplace.workers 移除，讓玩家可立刻補招募
+    if (this.workplace) {
+      this.workplace.workers = this.workplace.workers.filter(w => w.id !== this.id);
+    }
   }
 
   /* ---- render ---- */
@@ -731,6 +736,7 @@ class Game {
     };
     window.addEventListener('mousedown', startBgm);
     window.addEventListener('keydown', startBgm);
+    window.addEventListener('touchstart', startBgm, { passive: true });   // FIX: 手機要 touch 才能啟動 BGM
 
     // 分頁切換 / 關閉時暫停 BGM（避免關掉視窗音樂還在播）
     document.addEventListener('visibilitychange', () => {
@@ -1058,18 +1064,50 @@ class Game {
     }
     const lvLabel = b.level > 1 ? ` ${'⭐'.repeat(b.level)}` : '';
 
+    // 主城：可賣糧食換金幣（解 dead-end）
+    let sellHtml = '';
+    if (b.type === 'townhall') {
+      const food = this.resources.food || 0;
+      const sellPrice = 2;        // 1 食 = 2 金
+      sellHtml = `
+        <h3>🏪 主城商店</h3>
+        <p style="font-size:12px;color:#5a3a22">把多餘的糧食賣給路過商旅，1 糧 = ${sellPrice} 金幣</p>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+          <button class="actBtn" data-sell="1"  ${food<1?'disabled':''} style="flex:1">賣 1 (+${sellPrice}⛁)</button>
+          <button class="actBtn" data-sell="10" ${food<10?'disabled':''} style="flex:1">賣 10 (+${sellPrice*10}⛁)</button>
+          <button class="actBtn" data-sell="all" ${food<1?'disabled':''} style="flex:1">全賣 (+${food*sellPrice}⛁)</button>
+        </div>
+      `;
+    }
+
     c.innerHTML = `
       <h2>${def.name}${lvLabel}</h2>
       <div class="stat"><span>狀態</span><span>${b.isBuilt ? '✅ 完工' : `🔨 建造中 ${Math.round(b.progress*100)}%`}</span></div>
       <p style="font-size:13px;color:#5a3a22;margin:6px 0">${def.desc}</p>
       ${workersHtml}
       ${upgradeHtml}
+      ${sellHtml}
     `;
     panel.classList.remove('hidden');
     const rb = document.getElementById('recruitBtn');
     if (rb) rb.onclick = () => this._tryRecruit(b);
     const ub = document.getElementById('upgradeBtn');
     if (ub) ub.onclick = () => this._tryUpgrade(b);
+    c.querySelectorAll('[data-sell]').forEach(btn => {
+      btn.onclick = () => {
+        const food = this.resources.food || 0;
+        let q = btn.dataset.sell === 'all' ? food : Math.min(food, +btn.dataset.sell);
+        if (q <= 0) return this.toast('沒有糧食可賣！');
+        this.resources.food -= q;
+        this.resources.gold += q * 2;
+        this.flashRes('food', -q);
+        this.flashRes('gold', +q * 2);
+        playSfx('success', 0.4);
+        this._renderResUI();
+        this._showBuildingPanel(b);   // 刷新
+        this._checkMilestones();
+      };
+    });
     c.querySelectorAll('.npcCard').forEach(el => {
       el.onclick = () => {
         const id = +el.dataset.npc;

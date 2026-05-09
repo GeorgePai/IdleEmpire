@@ -141,7 +141,14 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   color: var(--c-accent); font-size: 12px;
 }
 @media (max-width: 768px) {
-  #milestone { display: none; }   /* 手機畫面太窄就隱藏 */
+  /* 手機：里程碑改成 chip 樣式，內容更緊湊 */
+  #milestone {
+    min-width: 0; max-width: 50vw;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  #milestone .ms-label { font-size: 11px; }
+  #milestone .ms-reward { font-size: 10px; }
 }
 
 #dayInfo {
