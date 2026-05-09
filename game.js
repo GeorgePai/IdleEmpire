@@ -204,9 +204,7 @@ class World {
     this.buildings.push(townHall);
     this.townHall = townHall;
 
-    // 中央放路徑石板（裝飾，不影響擺放）
-    for (let dx = -2; dx <= 2; dx++) this.setTile(cx+dx, cy+2, 2);
-    for (let dy = -1; dy <= 3; dy++) this.setTile(cx, cy+dy, 2);
+    // v1.5：移除主城周圍路徑（之前長得像深色橋很醜，純草地清爽）
 
     // 北側森林裝飾（離主城遠一點，玩家可在中段空地蓋農舍）
     for (let y = 0; y < 4; y++) {
@@ -217,16 +215,13 @@ class World {
       }
     }
 
-    // 西側河流（從上往下）+ 橋
+    // 西側河流（純藍水，無橋以避免再生出深色橋的 visual bug）
     const riverX = 3;
     for (let y = 0; y < MAP_H; y++) {
       this.setTile(riverX, y, 1);
       if (Math.random() < 0.4) this.setTile(riverX-1, y, 1);
       if (Math.random() < 0.4) this.setTile(riverX+1, y, 1);
     }
-    this.setTile(riverX-1, Math.floor(MAP_H/2), 2);
-    this.setTile(riverX,   Math.floor(MAP_H/2), 2);
-    this.setTile(riverX+1, Math.floor(MAP_H/2), 2);
 
     // 東側山岩（純裝飾，未來戰鬥地形用）
     for (let y = MAP_H-5; y < MAP_H; y++) {
