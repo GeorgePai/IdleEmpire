@@ -1609,7 +1609,7 @@ class Game {
     for (let cy = 0; cy < h; cy++) {
       for (let cx = 0; cx < w; cx++) {
         const key = this._soilTileKey(cx, cy, w, h);
-        const img = ASSETS.img[`soil_${key}`] || ASSETS.img.soil_o;
+        const img = ASSETS.img[`soil_${key}`] || ASSETS.img.soil_x || ASSETS.img.soil_o;
         if (img) {
           ctx.drawImage(img, px + cx*TILE, py + cy*TILE, TILE, TILE);
         } else {
@@ -1634,17 +1634,14 @@ class Game {
       ctx.restore();
     }
 
-    // 2. 圍籬：四周貼 fence sprite（v2.2 精緻化）
+    // 2. 圍籬：只在四角放小圍籬段（不擋路、不會讓 NPC 看似穿牆）
     const fence = ASSETS.img.fence;
     if (built && fence) {
-      ctx.save();
       ctx.imageSmoothingEnabled = false;
       const fW = TILE, fH = TILE * 0.5;
-      // 上方
-      for (let cx = 0; cx < w; cx++) ctx.drawImage(fence, px + cx*TILE, py - fH * 0.4, fW, fH);
-      // 下方
-      for (let cx = 0; cx < w; cx++) ctx.drawImage(fence, px + cx*TILE, py + h*TILE - fH * 0.6, fW, fH);
-      ctx.restore();
+      // 上左 + 上右 兩段 corner，讓農地有「邊界感」但不滿邊
+      ctx.drawImage(fence, px - 4, py - fH * 0.5, fW, fH);
+      ctx.drawImage(fence, px + dw - fW + 4, py - fH * 0.5, fW, fH);
     }
 
     // 3. 玉米作物（每階段都顯示）
@@ -1677,6 +1674,7 @@ class Game {
   }
 
   // 依格子位置（cx, cy）回傳 soil tile 邊角 key
+  // 注意：'o' 是「外部單獨格」(四邊都有 grass 邊框)；真正的內部用 'x'（純土壤無邊框）
   _soilTileKey(cx, cy, w, h) {
     const top = cy === 0, bot = cy === h - 1;
     const left = cx === 0, right = cx === w - 1;
@@ -1688,42 +1686,46 @@ class Game {
     if (bot) return 'bm';
     if (left) return 'lm';
     if (right) return 'rm';
-    return 'o';   // 中央
+    return 'x';   // 中央 — 純土壤無邊框
   }
 
   _renderNPCs() {
-    const { ctx } = this;
-    // 按 y 排序確保前後關係
-    const sorted = [...this.world.npcs].sort((a, b) => a.y - b.y);
-    for (const n of sorted) {
-      const key = n.spriteKey();
-      const img = ASSETS.img[key] || ASSETS.img[`farmer_down_idle_0`];
-      if (!img) continue;
-      // 角色 sprite 中心對齊 npc 腳底（172x124，本體 bbox y_bottom = 100，x_center = 86）
-      const ox = 86, oy = 100;
-      ctx.save();
-      // 死亡半透明
-      if (n.state === NPC_STATE.DEAD) ctx.globalAlpha = 0.5;
-      // 職業色光暈
-      ctx.fillStyle = n.def.color + '55';
-      ctx.beginPath();
-      ctx.arc(n.x, n.y - 4, 14, 0, Math.PI*2);
-      ctx.fill();
-      ctx.drawImage(img, n.x - ox, n.y - oy);
-      ctx.restore();
+    const { ctx, camera, canvas } = this;
+    // 視窗 culling — 只畫看得到的（v2.3 性能：許多 NPC 時可大幅減負擔）
+    const vx0 = camera.x - 100;
+    const vx1 = camera.x + canvas.width / camera.zoom + 100;
+    const vy0 = camera.y - 150;
+    const vy1 = camera.y + canvas.height / camera.zoom + 150;
 
-      // HP / Hunger 條（站立中）
+    const visible = this.world.npcs.filter(n =>
+      n.x >= vx0 && n.x <= vx1 && n.y >= vy0 && n.y <= vy1
+    );
+    visible.sort((a, b) => a.y - b.y);
+
+    const fallback = ASSETS.img[`farmer_down_idle_0`];
+    for (const n of visible) {
+      const img = ASSETS.img[n.spriteKey()] || fallback;
+      if (!img) continue;
+      const ox = 86, oy = 100;
+      const isDead = n.state === NPC_STATE.DEAD;
+      if (isDead) ctx.globalAlpha = 0.5;
+      ctx.drawImage(img, n.x - ox, n.y - oy);
+      if (isDead) ctx.globalAlpha = 1;
+
+      // HP / Hunger 條
       this._renderNpcBars(n);
-      // 名字（純文字、不再有 emoji）
+      // 名字標籤（v2.3 性能：cache 寬度避免每幀 measureText 暴增）
+      if (n._labelW == null) {
+        ctx.font = 'bold 12px "Noto Sans TC", sans-serif';
+        n._labelW = ctx.measureText(n.name).width + 10;
+      }
       ctx.font = 'bold 12px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
-      const label = n.name;
-      const lw = ctx.measureText(label).width + 10;
       ctx.fillStyle = 'rgba(0,0,0,.55)';
-      ctx.fillRect(n.x - lw/2, n.y - 86, lw, 16);
+      ctx.fillRect(n.x - n._labelW/2, n.y - 86, n._labelW, 16);
       ctx.fillStyle = '#fff';
-      ctx.fillText(label, n.x, n.y - 75);
+      ctx.fillText(n.name, n.x, n.y - 75);
     }
   }
 
