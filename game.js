@@ -49,9 +49,30 @@ const JOBS = {
   farmer: {
     name: '農夫', emoji: '🌾', color: '#e8b73a',
     workAnim: 'hoe',
-    workSeconds: 2.5,        // 在田裡單次動作（種 / 收）的時間
+    workSeconds: 2.5,
     recruitCost: { gold: 15, food: 8 },
   },
+};
+
+/* 里程碑（v2.0）：讓玩家有清楚的「下一步」目標 ---------------------- */
+const MILESTONES = [
+  { id: 'first_farm',  name: '蓋第一塊農地',     check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 1, reward: { gold: 30 } },
+  { id: 'first_hire',  name: '招募第一個農夫',   check: (g) => g.world.npcs.length >= 1,                                   reward: { gold: 30 } },
+  { id: 'food_50',     name: '累積 50 糧食',     check: (g) => g.resources.food >= 50,                                     reward: { gold: 60 } },
+  { id: 'farms_3',     name: '蓋 3 塊農地',      check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 3,   reward: { gold: 100 } },
+  { id: 'farmers_5',   name: '招募 5 個農夫',    check: (g) => g.world.npcs.length >= 5,                                   reward: { gold: 150 } },
+  { id: 'gold_500',    name: '擁有 500 金幣',    check: (g) => g.resources.gold >= 500,                                    reward: { food: 100 } },
+  { id: 'food_500',    name: '累積 500 糧食',    check: (g) => g.resources.food >= 500,                                    reward: { gold: 300 } },
+  { id: 'farms_10',    name: '蓋 10 塊農地',     check: (g) => g.world.buildings.filter(b=>b.type==='farm').length >= 10,  reward: { gold: 500 } },
+];
+
+/* 建築升級成本與效果 -------------------------------------------- */
+const UPGRADE = {
+  farm: [
+    null,                                                              // Lv1：基本
+    { cost: { gold: 80 },  growMul: 0.75, yieldBonus: 1 },              // Lv2：成長 +33%（時間 ×0.75）、每收 +1 糧
+    { cost: { gold: 200 }, growMul: 0.5,  yieldBonus: 2 },              // Lv3：成長 +100%、每收 +2 糧
+  ],
 };
 
 /* =============================================================
@@ -329,14 +350,27 @@ class Building {
     this.workers = [];
     this.builtAt = nowSec();
     this.constructionDur = type === 'townhall' ? 0 : 4;
+    this.level = 1;       // v2.0 升級
 
-    // 農地：每格 crop 狀態（stage: 0=空, 1=嫩苗, 2=抽穗, 3=結實, 4=成熟可收）
     if (this.def.isField) {
       this.crops = [];
       for (let i = 0; i < this.def.size.w * this.def.size.h; i++) {
         this.crops.push({ stage: 0, plantedAt: 0, claimedBy: null });
       }
     }
+  }
+  // 取目前升級的 multiplier
+  get growMul() {
+    const u = UPGRADE[this.type]?.[this.level - 1];
+    return u?.growMul || 1;
+  }
+  get yieldBonus() {
+    const u = UPGRADE[this.type]?.[this.level - 1];
+    return u?.yieldBonus || 0;
+  }
+  // 下一級升級資料
+  get nextUpgrade() {
+    return UPGRADE[this.type]?.[this.level];
   }
   get x() { return (this.tx + this.def.size.w/2) * TILE; }
   get y() { return (this.ty + this.def.size.h)   * TILE; }
@@ -373,8 +407,9 @@ class Building {
   tickGrowth() {
     if (!this.crops) return;
     const now = nowSec();
+    const interval = CROP_GROW_SEC * this.growMul;
     for (const c of this.crops) {
-      if (c.stage >= 1 && c.stage < 4 && now - c.plantedAt >= CROP_GROW_SEC * c.stage) {
+      if (c.stage >= 1 && c.stage < 4 && now - c.plantedAt >= interval * c.stage) {
         c.stage++;
       }
     }
@@ -542,13 +577,13 @@ class NPC {
       if (wp && wp.crops && idx != null) {
         const c = wp.crops[idx];
         if (c.stage === 4) {
-          // 收成
-          this.carry.food = (this.carry.food || 0) + 4;
+          // 收成（基本 4 + 升級加成）
+          const yld = 4 + (wp.yieldBonus || 0);
+          this.carry.food = (this.carry.food || 0) + yld;
           c.stage = 0;
           c.plantedAt = 0;
           playSfx('success', 0.35);
         } else if (c.stage === 0) {
-          // 種下
           c.stage = 1;
           c.plantedAt = nowSec();
           playSfx('plant', 0.30);
@@ -670,11 +705,13 @@ class Game {
     this._setupInput();
     this._setupUI();
 
-    // v1.6：每次重開都全新開始（暫不做存檔系統）
     try { localStorage.removeItem(SAVE_KEY); } catch(e) {}
 
     this._tickResRespawn = 0;
+    this._milestoneIdx = 0;
+    this._lastMilestoneCheck = 0;
     this._renderResUI();
+    this._renderMilestone();
     setTimeout(() => this.toast('💡 點下方「🔨 建造」蓋一塊農地'), 800);
 
     // BGM — 等使用者互動再播（瀏覽器 autoplay 政策）
@@ -993,15 +1030,37 @@ class Game {
         招募 ${rj.name}（${costStr}）
       </button>`;
     }
+    // v2.0：建築升級
+    let upgradeHtml = '';
+    if (b.isBuilt && b.nextUpgrade) {
+      const nu = b.nextUpgrade;
+      const costStr = Object.entries(nu.cost).map(([k,v]) => `${this._iconFor(k)} ${v}`).join(' ');
+      const canUp = this._canAfford(nu.cost);
+      const benefit = [];
+      if (nu.growMul && nu.growMul < 1) benefit.push(`成長 +${Math.round((1/nu.growMul - 1)*100)}%`);
+      if (nu.yieldBonus) benefit.push(`每收 +${nu.yieldBonus} 糧`);
+      upgradeHtml = `
+        <h3>⭐ 升級到 Lv${b.level + 1}</h3>
+        <div class="stat"><span>效果</span><span>${benefit.join(' / ')}</span></div>
+        <button class="actBtn" id="upgradeBtn" ${canUp?'':'disabled'}>升級（${costStr}）</button>
+      `;
+    } else if (b.isBuilt && b.level >= 3) {
+      upgradeHtml = `<div class="stat" style="margin-top:12px"><span>等級</span><span>⭐⭐⭐ Lv 滿</span></div>`;
+    }
+    const lvLabel = b.level > 1 ? ` ${'⭐'.repeat(b.level)}` : '';
+
     c.innerHTML = `
-      <h2>${def.name}</h2>
+      <h2>${def.name}${lvLabel}</h2>
       <div class="stat"><span>狀態</span><span>${b.isBuilt ? '✅ 完工' : `🔨 建造中 ${Math.round(b.progress*100)}%`}</span></div>
       <p style="font-size:13px;color:#5a3a22;margin:6px 0">${def.desc}</p>
       ${workersHtml}
+      ${upgradeHtml}
     `;
     panel.classList.remove('hidden');
     const rb = document.getElementById('recruitBtn');
     if (rb) rb.onclick = () => this._tryRecruit(b);
+    const ub = document.getElementById('upgradeBtn');
+    if (ub) ub.onclick = () => this._tryUpgrade(b);
     c.querySelectorAll('.npcCard').forEach(el => {
       el.onclick = () => {
         const id = +el.dataset.npc;
@@ -1009,6 +1068,18 @@ class Game {
         if (npc) this._showNPCPanel(npc);
       };
     });
+  }
+
+  _tryUpgrade(b) {
+    const nu = b.nextUpgrade;
+    if (!nu) return;
+    if (!this._canAfford(nu.cost)) return this.toast('資源不足！');
+    this._spend(nu.cost);
+    b.level++;
+    this.toast(`✨ ${b.def.name} 升級到 Lv${b.level}！`);
+    playSfx('success', 0.5);
+    this._renderResUI();
+    this._showBuildingPanel(b);
   }
 
   _tryRecruit(b) {
@@ -1163,6 +1234,36 @@ class Game {
     this._toastT = setTimeout(() => t.classList.add('hidden'), 2200);
   }
 
+  /* === 里程碑 v2.0 === */
+  _checkMilestones() {
+    while (this._milestoneIdx < MILESTONES.length) {
+      const m = MILESTONES[this._milestoneIdx];
+      if (!m.check(this)) break;
+      // 達成！發 reward + toast
+      for (const [k, v] of Object.entries(m.reward || {})) {
+        this.resources[k] = (this.resources[k] || 0) + v;
+        this.flashRes(k, +v);
+      }
+      this.toast(`🎯 達成：${m.name}！獲得獎勵`);
+      playSfx('success', 0.6);
+      this._milestoneIdx++;
+    }
+    this._renderMilestone();
+    this._renderResUI();
+  }
+
+  _renderMilestone() {
+    const el = document.getElementById('milestone');
+    if (!el) return;
+    if (this._milestoneIdx >= MILESTONES.length) {
+      el.innerHTML = `<span style="opacity:.7">🏆 全部里程碑達成！</span>`;
+      return;
+    }
+    const m = MILESTONES[this._milestoneIdx];
+    const rewardStr = Object.entries(m.reward || {}).map(([k,v]) => `+${v}${this._iconFor(k)}`).join(' ');
+    el.innerHTML = `<span class="ms-label">🎯 ${m.name}</span><span class="ms-reward">獎勵 ${rewardStr}</span>`;
+  }
+
   /* =============================================================
      主迴圈
      ============================================================= */
@@ -1190,6 +1291,13 @@ class Game {
     // 建築：農地的作物自動成長
     for (const b of this.world.buildings) {
       if (b.def.isField && b.isBuilt) b.tickGrowth();
+    }
+
+    // 里程碑檢查（每秒一次省效能）
+    this._lastMilestoneCheck += dt;
+    if (this._lastMilestoneCheck > 1) {
+      this._lastMilestoneCheck = 0;
+      this._checkMilestones();
     }
 
     // 資源點重生
