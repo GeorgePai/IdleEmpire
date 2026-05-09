@@ -32,9 +32,9 @@ const FARM_W = 4, FARM_H = 3;   // 農地大小（4 寬 × 3 高 = 12 格）
 const BUILDINGS = {
   townhall: {
     name: '主城', desc: '王國的核心。',
-    cost: { gold: 0 }, size: { w: 3, h: 3 },
+    cost: { gold: 0 }, size: { w: 2, h: 2 },
     capacity: 0, recruits: null,
-    tint: null, scale: 1.0, isField: false,
+    tint: null, scale: 0.7, isField: false,
   },
   farm: {
     name: '農地', desc: '雇用農夫在田裡種稻。',
@@ -1365,14 +1365,12 @@ class Game {
       ctx.fillStyle = '#a06a3a'; ctx.fillRect(px, py, dw, dh);
       return;
     }
-    // 主城 3×3 = 192px。farmhouse 原圖 148×292（aspect 1:1.97）
-    // 讓建築看起來像房子而非游泳池：
-    // - drawW = 192 (footprint 滿寬)
-    // - drawH = drawW × 1.97 = 378（保持原 aspect ratio，不被擠扁）
-    const drawW = dw;
-    const drawH = drawW * (sprite.height / sprite.width);
-    const drawX = px;
-    const drawY = py + dh - drawH;     // 底邊對齊 footprint 底邊
+    // 主城渲染：靠 scale 控制大小，保持 sprite 原 aspect ratio 不擠扁
+    const scale = b.def.scale || 0.7;
+    const drawW = dw * scale;
+    const drawH = drawW * (sprite.height / sprite.width);  // 保留原比例
+    const drawX = px + (dw - drawW) / 2;                   // 水平置中
+    const drawY = py + dh - drawH + 4;                     // 底邊靠近 footprint 底
 
     ctx.save();
     if (!built) ctx.globalAlpha = 0.4 + 0.5 * b.progress;
