@@ -103,14 +103,13 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   background: var(--c-panel);
   border: 2px solid var(--c-border);
   padding: 6px 14px;
-  min-width: 92px;
+  min-width: 84px;
   position: relative;
 }
-#topBar .res .lbl {
-  font-family: 'Noto Sans TC', sans-serif;
-  font-size: 13px; font-weight: 700;
-  color: var(--c-border);
-  letter-spacing: .5px;
+#topBar .res .ico {
+  width: 24px; height: 24px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
 }
 #topBar .res .val {
   font-family: 'JetBrains Mono', monospace;
@@ -213,8 +212,22 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 }
 #sidePanel h2 { font-size: 20px; margin-bottom: 8px; color: var(--c-border); border-bottom: 2px dashed var(--c-border-lite); padding-bottom: 6px; font-family: 'Noto Sans TC', sans-serif; letter-spacing: 1px; }
 #sidePanel h3 { font-size: 15px; margin: 10px 0 4px; font-family: 'Noto Sans TC', sans-serif; }
-#sidePanel .stat { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; font-family: 'Noto Sans TC', sans-serif; }
-#sidePanel .stat span:last-child { font-family: 'JetBrains Mono', sans-serif; font-size: 15px; }
+#sidePanel .stat {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 14px; padding: 3px 0;
+  font-family: 'Noto Sans TC', sans-serif;
+}
+#sidePanel .stat > span:first-child {
+  flex-shrink: 0; min-width: 56px;
+  color: var(--c-border-lite); font-size: 13px;
+}
+#sidePanel .stat > span:last-child {
+  flex: 1; text-align: right;
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 14px;
+  white-space: normal; word-break: keep-all;
+  line-height: 1.45;
+}
 #sidePanel .bar { background: #2a1f17; border: 2px solid var(--c-border); height: 12px; margin: 4px 0 8px; position: relative; }
 #sidePanel .bar > div { height: 100%; transition: width .2s; }
 #sidePanel .bar.hp > div { background: linear-gradient(90deg, #d65a3a, #f08858); }
@@ -246,6 +259,21 @@ img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   font-family: inherit; font-weight: 700; cursor: pointer;
   font-size: 14px;
 }
+
+.backBtn {
+  display: inline-block;
+  padding: 5px 12px;
+  margin-bottom: 10px;
+  border: 2px solid var(--c-border);
+  background: var(--c-panel);
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 13px; font-weight: 700;
+  color: var(--c-border);
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--c-border);
+}
+.backBtn:hover { background: #fff4cf; }
+.backBtn:active { transform: translateY(2px); box-shadow: 0 0 0 var(--c-border); }
 
 /* ============================================================
    建造選單 / 市場 / 玩法 共用 Modal

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=33">
+<link rel="stylesheet" href="./style.css?v=34">
 </head>
 <body>
   <!-- 載入畫面 -->
@@ -24,10 +24,10 @@
   <div id="game" class="hidden">
     <canvas id="world"></canvas>
 
-    <!-- 頂部資源欄（v2.1：純文字標籤、無 emoji） -->
+    <!-- 頂部資源欄（v2.4：自製像素 icon） -->
     <div id="topBar">
-      <div class="res" data-res="gold"><span class="lbl">金幣</span><span class="val">0</span></div>
-      <div class="res" data-res="food"><span class="lbl">糧食</span><span class="val">0</span></div>
+      <div class="res" data-res="gold"><img class="ico" src="./assets/ui/icons/coin.png?v=33"  alt="金幣"><span class="val">0</span></div>
+      <div class="res" data-res="food"><img class="ico" src="./assets/ui/icons/wheat.png?v=33" alt="糧食"><span class="val">0</span></div>
 
       <div id="milestone"></div>
 
@@ -75,6 +75,6 @@
     <div id="toast" class="hidden"></div>
   </div>
 
-  <script src="./game.js?v=33"></script>
+  <script src="./game.js?v=34"></script>
 </body>
 </html>

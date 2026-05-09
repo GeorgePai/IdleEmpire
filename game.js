@@ -31,7 +31,7 @@ const FARM_W = 4, FARM_H = 3;   // 農地大小（4 寬 × 3 高 = 12 格）
 /* 建築定義 ---------------------------------- */
 const BUILDINGS = {
   townhall: {
-    name: '主城', desc: '王國中心，可賣糧換金。',
+    name: '主城', desc: '王國中心。',
     cost: { gold: 0 }, size: { w: 2, h: 2 },
     capacity: 0, recruits: null,
     tint: null, scale: 0.95, isField: false,
@@ -41,6 +41,12 @@ const BUILDINGS = {
     cost: { gold: 40 }, size: { w: FARM_W, h: FARM_H },
     capacity: 2, recruits: 'farmer',
     tint: null, isField: true,
+  },
+  market: {
+    name: '市場', desc: '把糧食賣成金幣。',
+    cost: { gold: 60 }, size: { w: 2, h: 2 },
+    capacity: 0, recruits: null,
+    tint: null, scale: 0.85, isField: false,
   },
 };
 
@@ -99,8 +105,10 @@ const IMG_MANIFEST = (() => {
   }
   // Buildings — v2.2 用 PIL 繪製的真像素小屋 (96x80, aspect 1:0.83，無反鋸齒、限定調色盤)
   m.townhall_sprite = './assets/buildings/townhall_pixel.png';
+  m.market_sprite   = './assets/buildings/market_pixel.png';
   m.fence           = './assets/buildings/fence.png';
-  m.scarecrow       = './assets/buildings/scarecrow.png';
+  m.coin_icon       = './assets/ui/icons/coin.png';
+  m.wheat_icon      = './assets/ui/icons/wheat.png';
   m.house           = './assets/buildings/compact_house.png';   // fallback
   m.farmhouse       = './assets/buildings/farmhouse.png';       // fallback
   // Tiles
@@ -491,13 +499,25 @@ class NPC {
     }
     if (this.hp <= 0) { this._die(game); return; }
 
-    // 太餓就回家吃飯（飢餓<25 強制回去）
+    // v2.4：多階段飢餓行為
+    //   > 70：精力充沛，正常工作（速度 +5%）
+    //   40-70：正常
+    //   25-40：嘟囔但還能工作（速度 -10%、不主動回家）
+    //   < 25：強制回家吃飯（緊急）
+    //   < 10：拒絕工作，急速回家
+    if (!this._baseSpeed) this._baseSpeed = this.speed;
+    if (this.hunger > 70) this.speed = this._baseSpeed * 1.05;
+    else if (this.hunger > 40) this.speed = this._baseSpeed;
+    else if (this.hunger > 25) this.speed = this._baseSpeed * 0.9;
+    else this.speed = this._baseSpeed * 1.2;   // 急著回家時跑快點
+
     if (this.hunger < 25 && this.state !== NPC_STATE.EAT &&
         this.state !== NPC_STATE.GO_HOME_HUNGRY &&
         this.state !== NPC_STATE.RETURN &&
         this.state !== NPC_STATE.DEPOSIT) {
       this.state = NPC_STATE.GO_HOME_HUNGRY;
       this.target = { x: this.home.x, y: this.home.y };
+      this._moveAxis = null;
     }
 
     switch (this.state) {
@@ -658,18 +678,14 @@ class NPC {
     const arriveDist = 6;
     if (adx < arriveDist && ady < arriveDist) {
       this.setAnim('idle');
-      this._moveAxis = null;          // 重置軸選擇
+      this._moveAxis = null;
       onArrive();
       return;
     }
     this.setAnim('walk');
     const step = this.speed * dt;
 
-    // v2.2：L 型路徑 — 一旦選了軸就走到完成才切。避免每 tick 重選造成抖動。
-    // 規則：先走較長那一軸；該軸走到 < arriveDist 才切到另一軸。
-    if (!this._moveAxis) {
-      this._moveAxis = adx >= ady ? 'x' : 'y';
-    }
+    if (!this._moveAxis) this._moveAxis = adx >= ady ? 'x' : 'y';
     if (this._moveAxis === 'x' && adx < arriveDist) this._moveAxis = 'y';
     if (this._moveAxis === 'y' && ady < arriveDist) this._moveAxis = 'x';
 
@@ -683,6 +699,22 @@ class NPC {
     }
     nx = clamp(nx, 8, WORLD_W - 8);
     ny = clamp(ny, 8, WORLD_H - 8);
+
+    // v2.4：NPC-NPC 碰撞（避免重疊）
+    // 若新位置會與其他 NPC 太近，輕微推開
+    if (this._collisionRadius == null) this._collisionRadius = 18;
+    for (const other of (window.GAME?.world?.npcs || [])) {
+      if (other === this || other.state === NPC_STATE.DEAD) continue;
+      const ddx = nx - other.x, ddy = ny - other.y;
+      const minDist = this._collisionRadius;
+      const d = Math.hypot(ddx, ddy);
+      if (d > 0 && d < minDist) {
+        // 推開：把 nx/ny 往遠離 other 的方向偏移
+        const push = (minDist - d) / minDist;
+        nx += (ddx / d) * push * 4;
+        ny += (ddy / d) * push * 4;
+      }
+    }
     this.x = nx; this.y = ny;
   }
 
@@ -1094,23 +1126,14 @@ class Game {
     }
     const lvLabel = b.level > 1 ? `　Lv ${b.level}` : '';
 
-    // 主城：賣糧食 + 統計面板
-    let sellHtml = '';
+    // 主城：純統計面板（v2.4 移除商店）
+    let extraHtml = '';
     if (b.type === 'townhall') {
-      const food = this.resources.food || 0;
-      const sellPrice = 2;
       const s = this.stats || {};
       const farmCount = this.world.buildings.filter(x => x.type === 'farm').length;
       const playMin = Math.floor((nowSec() - (this._gameStartedAt || 0)) / 60);
-      sellHtml = `
-        <h3>賣糧食換金幣</h3>
-        <p style="font-size:12px;color:#5a3a22">1 糧食 換 ${sellPrice} 金幣</p>
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-          <button class="actBtn" data-sell="1"  ${food<1?'disabled':''} style="flex:1">賣 1</button>
-          <button class="actBtn" data-sell="10" ${food<10?'disabled':''} style="flex:1">賣 10</button>
-          <button class="actBtn" data-sell="all" ${food<1?'disabled':''} style="flex:1">全賣</button>
-        </div>
-        <h3 style="margin-top:14px">王國統計</h3>
+      extraHtml = `
+        <h3>王國統計</h3>
         <div class="stat"><span>遊玩時間</span><span>${playMin} 分鐘</span></div>
         <div class="stat"><span>累積收成</span><span>${s.foodHarvested||0} 糧食</span></div>
         <div class="stat"><span>累積收入</span><span>${s.goldEarned||0} 金幣</span></div>
@@ -1119,6 +1142,25 @@ class Game {
         <div class="stat"><span>死亡人數</span><span>${s.npcsDied||0}</span></div>
       `;
     }
+    // 市場：賣糧食換金幣
+    if (b.type === 'market' && b.isBuilt) {
+      const food = this.resources.food || 0;
+      const sellPrice = 2;
+      extraHtml = `
+        <h3>賣糧食換金幣</h3>
+        <p style="font-size:12px;color:#5a3a22;margin-bottom:8px">1 糧食 = ${sellPrice} 金幣</p>
+        <div class="stat"><span>目前糧食</span><span>${food} 糧食</span></div>
+        <div class="stat"><span>可換</span><span>${food * sellPrice} 金幣</span></div>
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+          <button class="actBtn" data-sell="1"  ${food<1?'disabled':''} style="flex:1">賣 1</button>
+          <button class="actBtn" data-sell="10" ${food<10?'disabled':''} style="flex:1">賣 10</button>
+          <button class="actBtn" data-sell="all" ${food<1?'disabled':''} style="flex:1">全賣</button>
+        </div>
+      `;
+    }
+
+    // v2.4：記住目前打開的是哪個建築（用於 NPC 詳情返回）
+    this._currentPanel = { type: 'building', target: b };
 
     c.innerHTML = `
       <h2>${def.name}${lvLabel}</h2>
@@ -1126,7 +1168,7 @@ class Game {
       <p style="font-size:13px;color:#5a3a22;margin:6px 0">${def.desc}</p>
       ${workersHtml}
       ${upgradeHtml}
-      ${sellHtml}
+      ${extraHtml}
     `;
     panel.classList.remove('hidden');
     const rb = document.getElementById('recruitBtn');
@@ -1152,7 +1194,7 @@ class Game {
       el.onclick = () => {
         const id = +el.dataset.npc;
         const npc = this.world.npcs.find(n => n.id === id);
-        if (npc) this._showNPCPanel(npc);
+        if (npc) this._showNPCPanel(npc, b);   // 帶上來源建築
       };
     });
   }
@@ -1189,10 +1231,21 @@ class Game {
     this._checkMilestones();
   }
 
-  _showNPCPanel(n) {
+  _showNPCPanel(n, fromBuilding) {
     const panel = document.getElementById('sidePanel');
     const c = document.getElementById('sideContent');
+
+    // 記住來源 — 用於返回（可能從建築面板點開）
+    const prev = fromBuilding || this._lastBuildingForNPC;
+    if (fromBuilding) this._lastBuildingForNPC = fromBuilding;
+    this._currentPanel = { type: 'npc', target: n, prev };
+
+    const backBtn = prev
+      ? `<button class="backBtn" id="backBtn">← 回 ${prev.def.name}</button>`
+      : '';
+
     c.innerHTML = `
+      ${backBtn}
       <h2>${n.name}（${n.def.name}）</h2>
       <div class="stat"><span>體力</span><span>${Math.round(n.hp)} / ${n.maxHp}</span></div>
       <div class="bar hp"><div style="width:${(n.hp/n.maxHp)*100}%"></div></div>
@@ -1201,6 +1254,8 @@ class Game {
       <div class="stat"><span>狀態</span><span>${this._stateLabel(n.state)}</span></div>
     `;
     panel.classList.remove('hidden');
+    const bb = document.getElementById('backBtn');
+    if (bb) bb.onclick = () => this._showBuildingPanel(prev);
   }
 
   _stateLabel(s) {
@@ -1224,6 +1279,15 @@ class Game {
 
   _hideSidePanel() {
     document.getElementById('sidePanel').classList.add('hidden');
+    this._currentPanel = null;
+  }
+
+  _refreshCurrentPanel() {
+    const p = this._currentPanel;
+    if (!p) return;
+    if (document.getElementById('sidePanel').classList.contains('hidden')) return;
+    if (p.type === 'building' && p.target) this._showBuildingPanel(p.target);
+    else if (p.type === 'npc' && p.target) this._showNPCPanel(p.target, p.prev);
   }
 
   _openMarket() {
@@ -1392,6 +1456,8 @@ class Game {
     if (this._lastMilestoneCheck > 1) {
       this._lastMilestoneCheck = 0;
       this._checkMilestones();
+      // v2.4：動態刷新當前打開的面板
+      this._refreshCurrentPanel();
     }
 
     // 資源點重生
@@ -1580,26 +1646,25 @@ class Game {
 
   _renderHouse(b, px, py, dw, dh, built) {
     const { ctx } = this;
-    // v2.2：用 PIL 預先繪製的真像素 sprite（townhall_pixel.png 96x80）
-    const sprite = ASSETS.img.townhall_sprite;
+    // 依建築類型選 sprite
+    let sprite;
+    if (b.type === 'townhall') sprite = ASSETS.img.townhall_sprite;
+    else if (b.type === 'market') sprite = ASSETS.img.market_sprite;
     if (!sprite) {
       ctx.fillStyle = '#a06a3a';
       ctx.fillRect(px, py, dw, dh);
       return;
     }
-    ctx.save();
     if (!built) ctx.globalAlpha = 0.4 + 0.5 * b.progress;
 
-    // 比例：footprint 2x2 = 128x128，sprite 96x80，整數倍放大保持像素硬邊
-    const scale = 2;            // 96x80 → 192x160（橫超出 footprint，但屋頂自然向上延伸沒問題）
+    const scale = 2;
     const drawW = sprite.width * scale;
     const drawH = sprite.height * scale;
     const drawX = px + dw/2 - drawW/2;
     const drawY = py + dh - drawH + 8;
-
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
-    ctx.restore();
+    if (!built) ctx.globalAlpha = 1;
   }
 
   _renderFarmField(b, px, py, dw, dh, built) {
@@ -1660,17 +1725,7 @@ class Game {
       }
     }
 
-    // 4. 稻草人：每塊農地中央放一個（裝飾）
-    const sc = ASSETS.img.scarecrow;
-    if (built && sc) {
-      ctx.imageSmoothingEnabled = false;
-      const scScale = 1.5;
-      const scW = sc.width * scScale, scH = sc.height * scScale;
-      // 放在農地最後一行的左上角第一格（不擋作物）
-      const scX = px + dw - scW - 6;
-      const scY = py + dh - scH - 4;
-      ctx.drawImage(sc, scX, scY, scW, scH);
-    }
+    // v2.4：稻草人移除（Pai 覺得多餘）
   }
 
   // 依格子位置（cx, cy）回傳 soil tile 邊角 key
@@ -1737,9 +1792,23 @@ class Game {
     // HP
     ctx.fillStyle = '#000'; ctx.fillRect(x, y, w, h);
     ctx.fillStyle = '#d65a3a'; ctx.fillRect(x, y, w * (n.hp/n.maxHp), h);
-    // Hunger
+    // Hunger — v2.4 顏色隨階段
+    let hungerColor = '#5fa84e';                     // 綠 (>70)
+    if (n.hunger <= 70) hungerColor = '#e8b73a';     // 黃 (中)
+    if (n.hunger <= 40) hungerColor = '#d68a30';     // 橘 (低)
+    if (n.hunger <= 25) hungerColor = '#b53a2c';     // 紅 (危險)
     ctx.fillStyle = '#000'; ctx.fillRect(x, y + 6, w, h);
-    ctx.fillStyle = '#e8b73a'; ctx.fillRect(x, y + 6, w * (n.hunger/n.maxHunger), h);
+    ctx.fillStyle = hungerColor; ctx.fillRect(x, y + 6, w * (n.hunger/n.maxHunger), h);
+
+    // 飢餓危急時頭頂顯示驚嘆號
+    if (n.hunger < 25) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(n.x - 2, n.y - 100, 4, 8);
+      ctx.fillRect(n.x - 2, n.y - 90, 4, 2);
+      ctx.fillStyle = '#b53a2c';
+      ctx.fillRect(n.x - 1, n.y - 99, 2, 6);
+      ctx.fillRect(n.x - 1, n.y - 89, 2, 1);
+    }
   }
 
   _renderPlacementGhost() {
