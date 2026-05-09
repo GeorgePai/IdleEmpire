@@ -34,7 +34,7 @@ const BUILDINGS = {
     name: '主城', desc: '王國的核心。',
     cost: { gold: 0 }, size: { w: 2, h: 2 },
     capacity: 0, recruits: null,
-    tint: null, scale: 0.7, isField: false,
+    tint: null, scale: 0.95, isField: false,
   },
   farm: {
     name: '農地', desc: '雇用農夫在田裡種稻。',
@@ -76,8 +76,9 @@ const IMG_MANIFEST = (() => {
       }
     }
   }
-  // Buildings — v1.5 用乾淨的 farmhouse.png 為單一基底（148x292，含煙囪、磚窗、門、水桶）
-  m.farmhouse     = './assets/buildings/farmhouse.png';
+  // Buildings — v2.0 用 compact_house.png（裁掉磚紋大段，剩下煙囪+門+水桶，aspect 1:1.33）
+  m.house         = './assets/buildings/compact_house.png';
+  m.farmhouse     = './assets/buildings/farmhouse.png';   // 保留作備用
   // Tiles
   m.grass         = './assets/tiles/Grass.png';
   m.hills         = './assets/tiles/Hills.png';
@@ -479,18 +480,23 @@ class NPC {
 
   _tickIdle(game) {
     if (!this.workplace || !this.workplace.isBuilt) return;
-    // 農夫只做田裡的事
     const wp = this.workplace;
     if (!wp.crops) return;
 
+    // 閒晃冷卻：每次閒晃後停留 1-3 秒再決定下一步
+    if (this._idleCooldown && this._idleCooldown > nowSec()) return;
+
     const idx = wp.pickCropForFarmer(this.id);
     if (idx < 0) {
-      // 暫無工作 — 在農地周圍小範圍閒晃
+      // 沒事做 — 隨機到農地周圍 1-2 tile 範圍閒晃
+      const range = TILE * (1 + Math.random());
       this.target = {
-        x: wp.x + rand(-TILE*0.5, TILE*0.5),
-        y: wp.y + rand(-TILE*0.5, TILE*0.5),
+        x: wp.x + rand(-range, range),
+        y: wp.y + rand(-range * 0.6, range * 0.6),
         idle: true,
       };
+      // 設定到達後的冷卻時間（1-3 秒）
+      this._idleCooldownAfter = 1 + Math.random() * 2;
       this.state = NPC_STATE.GOTO_WORK;
       return;
     }
@@ -504,15 +510,20 @@ class NPC {
 
   _onArriveWork(game) {
     if (this.target?.idle) {
+      // 閒晃結束 — 設定冷卻時間，停一下再動
       this.target = null;
       this.state = NPC_STATE.IDLE;
       this.setAnim('idle');
+      if (this._idleCooldownAfter) {
+        this._idleCooldown = nowSec() + this._idleCooldownAfter;
+        this._idleCooldownAfter = null;
+      }
       return;
     }
     this.state = NPC_STATE.WORKING;
     this.workTimer = 0;
     this.setAnim(this.def.workAnim);
-    playSfx('dig', 0.35);     // 鋤地音效
+    playSfx('dig', 0.35);
   }
 
   _tickWorking(dt, game) {
@@ -1360,17 +1371,17 @@ class Game {
 
   _renderHouse(b, px, py, dw, dh, built) {
     const { ctx } = this;
-    const sprite = ASSETS.img.farmhouse;
+    const sprite = ASSETS.img.house || ASSETS.img.farmhouse;
     if (!sprite) {
       ctx.fillStyle = '#a06a3a'; ctx.fillRect(px, py, dw, dh);
       return;
     }
-    // 主城渲染：靠 scale 控制大小，保持 sprite 原 aspect ratio 不擠扁
-    const scale = b.def.scale || 0.7;
+    // 主城用 compact_house（aspect 1:1.33），整個建築自然撐滿 footprint
+    const scale = b.def.scale || 0.95;
     const drawW = dw * scale;
-    const drawH = drawW * (sprite.height / sprite.width);  // 保留原比例
-    const drawX = px + (dw - drawW) / 2;                   // 水平置中
-    const drawY = py + dh - drawH + 4;                     // 底邊靠近 footprint 底
+    const drawH = drawW * (sprite.height / sprite.width);
+    const drawX = px + (dw - drawW) / 2;
+    const drawY = py + dh - drawH + 8;
 
     ctx.save();
     if (!built) ctx.globalAlpha = 0.4 + 0.5 * b.progress;
@@ -1458,11 +1469,16 @@ class Game {
 
       // HP / Hunger 條（站立中）
       this._renderNpcBars(n);
-      // 職業 emoji 標籤
-      ctx.font = '18px "Noto Sans TC", sans-serif';
+      // 名字 + 職業 emoji（在頭頂）
+      ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillText(n.def.emoji, n.x, n.y - 76);
+      const label = `${n.def.emoji} ${n.name}`;
+      const lw = ctx.measureText(label).width + 10;
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      ctx.fillRect(n.x - lw/2, n.y - 88, lw, 18);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, n.x, n.y - 75);
     }
   }
 
