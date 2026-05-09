@@ -340,12 +340,12 @@ class World {
     return best;
   }
 
-  // 隨機回家用空地（townhall 附近）
+  // 主城下方 1 格的「家門口」位置（保證在建築外）
   homePoint() {
     const th = this.townHall;
     return {
       x: (th.tx + th.def.size.w/2) * TILE,
-      y: (th.ty + th.def.size.h + 0.5) * TILE,
+      y: (th.ty + th.def.size.h + 1) * TILE,
     };
   }
 }
@@ -488,6 +488,25 @@ class NPC {
   tick(dt, game) {
     if (this.state === NPC_STATE.DEAD) return;
 
+    // v2.6：unstuck — 如果被卡在建築內（不該在的），立刻推出
+    for (const b of game.world.buildings) {
+      if (!b.def || b.def.isField) continue;
+      if (b === this.workplace) continue;
+      const x0 = b.tx * TILE, y0 = b.ty * TILE;
+      const x1 = x0 + b.def.size.w * TILE, y1 = y0 + b.def.size.h * TILE;
+      if (this.x > x0 - 4 && this.x < x1 + 4 && this.y > y0 - 4 && this.y < y1 + 4) {
+        // 推到最近邊外
+        const dxL = this.x - x0, dxR = x1 - this.x;
+        const dyT = this.y - y0, dyB = y1 - this.y;
+        const minD = Math.min(dxL, dxR, dyT, dyB);
+        if (minD === dxL) this.x = x0 - 12;
+        else if (minD === dxR) this.x = x1 + 12;
+        else if (minD === dyT) this.y = y0 - 12;
+        else this.y = y1 + 12;
+        this._moveAxis = null;   // 重置軸
+      }
+    }
+
     // 飢餓 & HP
     this.hunger -= dt * 0.8;       // FIX: 半速（從 1.6 → 0.8），給玩家更從容的調度時間
     if (this.hunger <= 0) {
@@ -516,7 +535,7 @@ class NPC {
         this.state !== NPC_STATE.RETURN &&
         this.state !== NPC_STATE.DEPOSIT) {
       this.state = NPC_STATE.GO_HOME_HUNGRY;
-      this.target = { x: this.home.x, y: this.home.y };
+      this.target = { x: this.home.x, y: this.home.y + TILE };   // 主城下方 1 格 (保證建築外)
       this._moveAxis = null;
     }
 
@@ -618,7 +637,7 @@ class NPC {
       }
       // 有 carry 就回家儲存，否則繼續找下一格
       if (this.carry.food && this.carry.food > 0) {
-        this.target = { x: this.home.x, y: this.home.y };
+        this.target = { x: this.home.x, y: this.home.y + TILE };   // 主城下方 1 格 (保證建築外)
         this.state = NPC_STATE.RETURN;
         this.setAnim('walk');
       } else {
@@ -727,23 +746,32 @@ class NPC {
       }
     }
 
-    // v2.5：NPC vs 建築碰撞（不能踩進建築 footprint）
+    // v2.5+：NPC vs 建築碰撞 — 推離 + 強制換軸（避免卡在邊上死循環）
     if (game?.world) {
       for (const b of game.world.buildings) {
-        if (!b.def || b.def.isField) continue;   // 農地可進
+        if (!b.def || b.def.isField) continue;
         if (b === this.workplace) continue;
         const x0 = b.tx * TILE, y0 = b.ty * TILE;
         const x1 = x0 + b.def.size.w * TILE, y1 = y0 + b.def.size.h * TILE;
-        // 留 6px buffer 讓 npc 不踩到建築邊
         if (nx > x0 - 8 && nx < x1 + 8 && ny > y0 - 8 && ny < y1 + 8) {
-          // 推離最近的邊
-          const dxL = nx - x0, dxR = x1 - nx;
-          const dyT = ny - y0, dyB = y1 - ny;
-          const minD = Math.min(dxL, dxR, dyT, dyB);
-          if (minD === dxL) nx = x0 - 8;
-          else if (minD === dxR) nx = x1 + 8;
-          else if (minD === dyT) ny = y0 - 8;
-          else ny = y1 + 8;
+          // 沿著「目前移動軸」的反方向退回，並切換到另一軸
+          if (this._moveAxis === 'y') {
+            // Y 軸碰到建築 → 退回 Y 並切到 X 繞過去
+            ny = this.y;
+            this._moveAxis = 'x';
+          } else if (this._moveAxis === 'x') {
+            nx = this.x;
+            this._moveAxis = 'y';
+          } else {
+            // 沒在某軸 → 推離最近邊緣
+            const dxL = nx - x0, dxR = x1 - nx;
+            const dyT = ny - y0, dyB = y1 - ny;
+            const minD = Math.min(dxL, dxR, dyT, dyB);
+            if (minD === dxL) nx = x0 - 8;
+            else if (minD === dxR) nx = x1 + 8;
+            else if (minD === dyT) ny = y0 - 8;
+            else ny = y1 + 8;
+          }
         }
       }
     }
