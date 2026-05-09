@@ -1003,10 +1003,11 @@ class Game {
     this.toast(`✅ ${def.name} 建造中…`);
     playSfx('chop', 0.5);
     setTimeout(() => playSfx('chop', 0.4), 200);
-    // 蓋了第一塊農地後，停掉脈動提示
     if (type === 'farm') {
       document.getElementById('buildBtn')?.classList.remove('pulse');
     }
+    // 立即檢查里程碑（不必等 1 秒 tick）
+    this._checkMilestones();
   }
 
   _spend(cost) {
@@ -1101,9 +1102,10 @@ class Game {
     b.workers.push(npc);
     this.world.npcs.push(npc);
     this._renderResUI();
-    this._showBuildingPanel(b); // 刷新面板
+    this._showBuildingPanel(b);
     this.toast(`✅ 招募了 ${JOBS[job].name} ${npc.name}`);
     playSfx('success', 0.4);
+    this._checkMilestones();
   }
 
   _showNPCPanel(n) {
@@ -1209,6 +1211,8 @@ class Game {
     this.resources[k] = (this.resources[k] || 0) + v;
     this.flashRes(k, v, atX, atY);
     this._renderResUI();
+    // 資源達到某數量會觸發里程碑
+    if (this._milestoneIdx < MILESTONES.length) this._checkMilestones();
   }
 
   flashRes(k, v, wx, wy) {
