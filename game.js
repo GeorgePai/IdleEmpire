@@ -577,12 +577,14 @@ class NPC {
       if (wp && wp.crops && idx != null) {
         const c = wp.crops[idx];
         if (c.stage === 4) {
-          // 收成（基本 4 + 升級加成）
+          // 收成
           const yld = 4 + (wp.yieldBonus || 0);
           this.carry.food = (this.carry.food || 0) + yld;
           c.stage = 0;
           c.plantedAt = 0;
           playSfx('success', 0.35);
+          // 世界內飄字：+N🌾 從收成位置浮起
+          if (game) game.flashRes('food', +yld, this.x, this.y - 50);
         } else if (c.stage === 0) {
           c.stage = 1;
           c.plantedAt = nowSec();
