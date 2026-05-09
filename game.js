@@ -700,21 +700,54 @@ class NPC {
     nx = clamp(nx, 8, WORLD_W - 8);
     ny = clamp(ny, 8, WORLD_H - 8);
 
-    // v2.4：NPC-NPC 碰撞（避免重疊）
-    // 若新位置會與其他 NPC 太近，輕微推開
-    if (this._collisionRadius == null) this._collisionRadius = 18;
-    for (const other of (window.GAME?.world?.npcs || [])) {
-      if (other === this || other.state === NPC_STATE.DEAD) continue;
-      const ddx = nx - other.x, ddy = ny - other.y;
-      const minDist = this._collisionRadius;
-      const d = Math.hypot(ddx, ddy);
-      if (d > 0 && d < minDist) {
-        // 推開：把 nx/ny 往遠離 other 的方向偏移
-        const push = (minDist - d) / minDist;
-        nx += (ddx / d) * push * 4;
-        ny += (ddy / d) * push * 4;
+    // v2.5：NPC-NPC 碰撞用空間網格（O(N) 取代之前 O(N²)）
+    const game = window.GAME;
+    const grid = game?._npcGrid;
+    if (grid) {
+      const cellSize = grid.cellSize;
+      const cx = Math.floor(nx / cellSize), cy = Math.floor(ny / cellSize);
+      // 只檢查 cur cell + 8 個鄰格
+      const minDist = 18;
+      for (let gy = cy - 1; gy <= cy + 1; gy++) {
+        for (let gx = cx - 1; gx <= cx + 1; gx++) {
+          const cell = grid.cells.get(gy * 10000 + gx);
+          if (!cell) continue;
+          for (const other of cell) {
+            if (other === this || other.state === NPC_STATE.DEAD) continue;
+            const ddx = nx - other.x, ddy = ny - other.y;
+            const d2 = ddx*ddx + ddy*ddy;
+            if (d2 > 0 && d2 < minDist*minDist) {
+              const d = Math.sqrt(d2);
+              const push = (minDist - d) / minDist;
+              nx += (ddx / d) * push * 4;
+              ny += (ddy / d) * push * 4;
+            }
+          }
+        }
       }
     }
+
+    // v2.5：NPC vs 建築碰撞（不能踩進建築 footprint）
+    if (game?.world) {
+      for (const b of game.world.buildings) {
+        if (!b.def || b.def.isField) continue;   // 農地可進
+        if (b === this.workplace) continue;
+        const x0 = b.tx * TILE, y0 = b.ty * TILE;
+        const x1 = x0 + b.def.size.w * TILE, y1 = y0 + b.def.size.h * TILE;
+        // 留 6px buffer 讓 npc 不踩到建築邊
+        if (nx > x0 - 8 && nx < x1 + 8 && ny > y0 - 8 && ny < y1 + 8) {
+          // 推離最近的邊
+          const dxL = nx - x0, dxR = x1 - nx;
+          const dyT = ny - y0, dyB = y1 - ny;
+          const minD = Math.min(dxL, dxR, dyT, dyB);
+          if (minD === dxL) nx = x0 - 8;
+          else if (minD === dxR) nx = x1 + 8;
+          else if (minD === dyT) ny = y0 - 8;
+          else ny = y1 + 8;
+        }
+      }
+    }
+
     this.x = nx; this.y = ny;
   }
 
@@ -1449,6 +1482,20 @@ class Game {
     // 建築：農地的作物自動成長
     for (const b of this.world.buildings) {
       if (b.def.isField && b.isBuilt) b.tickGrowth();
+    }
+
+    // v2.5：每 tick 重建 NPC 空間網格（用於 O(N) 碰撞檢查）
+    if (!this._npcGrid) this._npcGrid = { cellSize: 48, cells: new Map() };
+    const grid = this._npcGrid;
+    grid.cells.clear();
+    for (const n of this.world.npcs) {
+      if (n.state === NPC_STATE.DEAD) continue;
+      const gx = Math.floor(n.x / grid.cellSize);
+      const gy = Math.floor(n.y / grid.cellSize);
+      const key = gy * 10000 + gx;
+      let cell = grid.cells.get(key);
+      if (!cell) { cell = []; grid.cells.set(key, cell); }
+      cell.push(n);
     }
 
     // 里程碑檢查（每秒一次省效能）
