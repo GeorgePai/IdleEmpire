@@ -20,40 +20,36 @@ const RES_TYPES = ['gold', 'wood', 'ore', 'food', 'potion'];
 
 const SELL_PRICE = { wood: 2, ore: 5, food: 1, potion: 12 };
 
-const STARTING_RES = { gold: 100, wood: 0, ore: 0, food: 20, potion: 0 };
+const STARTING_RES = { gold: 100, food: 20 };
+const VISIBLE_RES = ['gold', 'food'];        // v1.6 只顯示這兩種
 
-/* 建築定義（v1.5 精簡：只留主城 + 農舍 + 市場）-------------------- */
+/* 農地 crop 階段定義 ------------------------------------------- */
+const CROP_STAGES = 5;          // 0=空 / 1=嫩苗 / 2=抽穗 / 3=結實 / 4=成熟可收
+const CROP_GROW_SEC = 12;       // 每階段間隔（秒），共需 36 秒從種到熟
+const FARM_W = 4, FARM_H = 3;   // 農地大小（4 寬 × 3 高 = 12 格）
+
+/* 建築定義（v1.6：主城 + 農地）---------------------------------- */
 const BUILDINGS = {
   townhall: {
-    name: '主城', desc: '王國的核心，儲存所有資源。',
-    cost: { gold: 0 }, size: { w: 2, h: 2 },
+    name: '主城', desc: '王國的核心。',
+    cost: { gold: 0 }, size: { w: 3, h: 3 },
     capacity: 0, recruits: null,
-    tint: null, scale: 1.0,
+    tint: null, scale: 1.0, isField: false,
   },
   farm: {
-    name: '農舍', desc: '雇用農夫種植糧食。',
-    cost: { gold: 40 }, size: { w: 2, h: 2 },
+    name: '農地', desc: '雇用農夫在田裡種稻。',
+    cost: { gold: 40 }, size: { w: FARM_W, h: FARM_H },
     capacity: 2, recruits: 'farmer',
-    tint: 'rgba(120,200,80,0.18)',     // 淡綠
-    scale: 0.85,
-  },
-  market: {
-    name: '市場', desc: '把糧食賣成金幣。',
-    cost: { gold: 60 }, size: { w: 2, h: 2 },
-    capacity: 0, recruits: null,
-    tint: 'rgba(220,140,60,0.20)',     // 暖橘
-    scale: 0.80,
+    tint: null, isField: true,
   },
 };
 
-/* NPC 職業定義（v1.5：只留農夫）---------------------------------- */
+/* NPC 職業（v1.6：只留農夫）---------------------------------- */
 const JOBS = {
   farmer: {
     name: '農夫', emoji: '🌾', color: '#e8b73a',
     workAnim: 'hoe',
-    output: { food: 4 },
-    workSeconds: 6,
-    targetType: 'soil',
+    workSeconds: 2.5,        // 在田裡單次動作（種 / 收）的時間
     recruitCost: { gold: 15, food: 8 },
   },
 };
@@ -153,12 +149,32 @@ function loadAssets(onProgress) {
 
 function playSfx(key, vol = 0.5) {
   if (window.GAME && window.GAME._muted) return;
+  // click 用 Web Audio 即時合成（短促 UI blip，不耗素材）
+  if (key === 'click') return _synthClick(vol);
   const a = ASSETS.aud[key];
   if (!a) return;
   try {
     const c = a.cloneNode();
     c.volume = vol;
     c.play().catch(()=>{});
+  } catch(e){}
+}
+
+function _synthClick(vol = 0.3) {
+  try {
+    window._audioCtx = window._audioCtx ||
+      new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = window._audioCtx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.04);
+    gain.gain.setValueAtTime(vol * 0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.07);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.07);
   } catch(e){}
 }
 
@@ -198,24 +214,25 @@ class World {
 
     const cx = Math.floor(MAP_W/2), cy = Math.floor(MAP_H/2);
 
-    // 中央放主城
+    // 中央放主城（3×3）
     const townHall = new Building('townhall', cx-1, cy-1);
     townHall.builtAt = 0;
     this.buildings.push(townHall);
     this.townHall = townHall;
 
-    // v1.5：移除主城周圍路徑（之前長得像深色橋很醜，純草地清爽）
+    // v1.6：移除所有花花草草、灌木、向日葵裝飾（Pai 覺得礙眼）
+    // 只保留遠處森林輪廓 + 西側河流 + 東側山岩
 
-    // 北側森林裝飾（離主城遠一點，玩家可在中段空地蓋農舍）
-    for (let y = 0; y < 4; y++) {
+    // 北側森林（樹木裝飾）
+    for (let y = 0; y < 3; y++) {
       for (let x = 0; x < MAP_W; x++) {
-        if (Math.random() < 0.28) {
+        if (Math.random() < 0.35) {
           this.objects.push({ kind: 'decor_tree', x: x*TILE+rand(8,24), y: y*TILE+rand(8,24) });
         }
       }
     }
 
-    // 西側河流（純藍水，無橋以避免再生出深色橋的 visual bug）
+    // 西側河流
     const riverX = 3;
     for (let y = 0; y < MAP_H; y++) {
       this.setTile(riverX, y, 1);
@@ -223,22 +240,11 @@ class World {
       if (Math.random() < 0.4) this.setTile(riverX+1, y, 1);
     }
 
-    // 東側山岩（純裝飾，未來戰鬥地形用）
+    // 東側山岩
     for (let y = MAP_H-5; y < MAP_H; y++) {
       for (let x = MAP_W-5; x < MAP_W; x++) {
         if (Math.random() < 0.32) this.setTile(x, y, 3);
       }
-    }
-
-    // 散落花、灌木、向日葵裝飾（南半部 + 東邊）
-    for (let i = 0; i < 50; i++) {
-      const tx = randI(0, MAP_W-1);
-      const ty = randI(0, MAP_H-1);
-      if (this.tileAt(tx, ty) !== 0) continue;
-      // 不要太靠近主城
-      if (Math.abs(tx-cx) < 4 && Math.abs(ty-cy) < 3) continue;
-      const k = choice(['decor_flower','decor_bush','decor_grass']);
-      this.objects.push({ kind: k, x: tx*TILE+rand(8,TILE-8), y: ty*TILE+rand(8,TILE-8) });
     }
   }
 
@@ -321,19 +327,56 @@ class Building {
     this.tx = tx; this.ty = ty;
     this.workers = [];
     this.builtAt = nowSec();
-    this.constructionDur = type === 'townhall' ? 0 : 4; // 4 秒蓋好
+    this.constructionDur = type === 'townhall' ? 0 : 4;
+
+    // 農地：每格 crop 狀態（stage: 0=空, 1=嫩苗, 2=抽穗, 3=結實, 4=成熟可收）
+    if (this.def.isField) {
+      this.crops = [];
+      for (let i = 0; i < this.def.size.w * this.def.size.h; i++) {
+        this.crops.push({ stage: 0, plantedAt: 0, claimedBy: null });
+      }
+    }
   }
   get x() { return (this.tx + this.def.size.w/2) * TILE; }
-  get y() { return (this.ty + this.def.size.h)   * TILE; }   // 入口在底邊
+  get y() { return (this.ty + this.def.size.h)   * TILE; }
   get isBuilt() { return nowSec() - this.builtAt >= this.constructionDur; }
   get progress() { return Math.min(1, (nowSec() - this.builtAt) / Math.max(0.0001, this.constructionDur)); }
 
-  // 員工招募點（建築前空地）
-  workSpot(idx) {
+  // 取得農地某格的世界座標（中心點）
+  cropWorldPos(idx) {
+    const w = this.def.size.w;
+    const cx = idx % w, cy = Math.floor(idx / w);
     return {
-      x: this.x + ((idx % 2) - 0.5) * TILE * 0.6,
-      y: this.y + 16,
+      x: (this.tx + cx + 0.5) * TILE,
+      y: (this.ty + cy + 0.5) * TILE,
     };
+  }
+
+  // 為農夫挑一格工作目標：優先成熟（stage=4，可收）；其次空格（stage=0，可種）
+  pickCropForFarmer(npcId) {
+    if (!this.crops) return -1;
+    // 先找成熟的
+    for (let i = 0; i < this.crops.length; i++) {
+      const c = this.crops[i];
+      if (c.stage === 4 && (!c.claimedBy || c.claimedBy === npcId)) return i;
+    }
+    // 再找空地
+    for (let i = 0; i < this.crops.length; i++) {
+      const c = this.crops[i];
+      if (c.stage === 0 && (!c.claimedBy || c.claimedBy === npcId)) return i;
+    }
+    return -1;
+  }
+
+  // 自動成長：每 CROP_GROW_SEC 秒往上一階（直到成熟）
+  tickGrowth() {
+    if (!this.crops) return;
+    const now = nowSec();
+    for (const c of this.crops) {
+      if (c.stage >= 1 && c.stage < 4 && now - c.plantedAt >= CROP_GROW_SEC * c.stage) {
+        c.stage++;
+      }
+    }
   }
 }
 
@@ -435,81 +478,82 @@ class NPC {
   }
 
   _tickIdle(game) {
-    if (!this.workplace) return;
-    // 找工作目標
-    if (this.def.targetType === 'lab') {
-      // 藥水師工作地點 = 自家建築前
-      this.target = { x: this.workplace.x, y: this.workplace.y, kind: 'lab' };
-      this.state = NPC_STATE.GOTO_WORK;
-      return;
-    }
-    if (this.def.targetType === 'soil') {
-      // 農夫：在自家建築附近的田地
+    if (!this.workplace || !this.workplace.isBuilt) return;
+    // 農夫只做田裡的事
+    const wp = this.workplace;
+    if (!wp.crops) return;
+
+    const idx = wp.pickCropForFarmer(this.id);
+    if (idx < 0) {
+      // 暫無工作 — 在農地周圍小範圍閒晃
       this.target = {
-        x: this.workplace.x + rand(-TILE*0.8, TILE*0.8),
-        y: this.workplace.y + rand(TILE*0.4, TILE*1.4),
-        kind: 'soil',
+        x: wp.x + rand(-TILE*0.5, TILE*0.5),
+        y: wp.y + rand(-TILE*0.5, TILE*0.5),
+        idle: true,
       };
       this.state = NPC_STATE.GOTO_WORK;
       return;
     }
-    // 採集師/採礦師：找最近的 res
-    const res = game.world.findClosestRes(this.def.targetType, this.x, this.y);
-    if (res) {
-      res._claimedBy = this.id;
-      res._claimedByExpires = nowSec() + 30;
-      this.target = { x: res.x, y: res.y, kind: this.def.targetType, res };
-      this.state = NPC_STATE.GOTO_WORK;
-    } else {
-      // 沒找到資源：四處遊走
-      this.target = {
-        x: this.workplace.x + rand(-TILE*2, TILE*2),
-        y: this.workplace.y + rand(-TILE*2, TILE*2),
-      };
-      this.state = NPC_STATE.GOTO_WORK;
-      this._idleStroll = true;
-    }
+
+    // 認領這格作物
+    wp.crops[idx].claimedBy = this.id;
+    const pos = wp.cropWorldPos(idx);
+    this.target = { x: pos.x, y: pos.y, cropIdx: idx };
+    this.state = NPC_STATE.GOTO_WORK;
   }
 
   _onArriveWork(game) {
-    if (this._idleStroll) {
-      this._idleStroll = false;
+    if (this.target?.idle) {
+      this.target = null;
       this.state = NPC_STATE.IDLE;
+      this.setAnim('idle');
       return;
     }
     this.state = NPC_STATE.WORKING;
     this.workTimer = 0;
     this.setAnim(this.def.workAnim);
+    playSfx('dig', 0.35);     // 鋤地音效
   }
 
   _tickWorking(dt, game) {
     this.workTimer += dt;
-    // 朝向目標
     if (this.target) this._faceTowards(this.target.x, this.target.y);
+    // 工作中持續發出鋤地聲（每秒一次）
+    this._workSfxTimer = (this._workSfxTimer || 0) + dt;
+    if (this._workSfxTimer >= 1) {
+      this._workSfxTimer = 0;
+      playSfx('dig', 0.18);
+    }
     if (this.workTimer >= this.def.workSeconds) {
-      // 完成一次循環
-      const out = this.def.output;
-      for (const [k, v] of Object.entries(out)) {
-        this.carry[k] = (this.carry[k] || 0) + v;
-      }
-      // 對資源造成消耗
-      const r = this.target?.res;
-      if (r) {
-        r.hp -= 1;
-        if (r.hp <= 0) {
-          r.depleted = true;
-          r.respawnAt = nowSec() + (r.kind === 'tree' ? 60 : r.kind === 'rock' ? 80 : 30);
+      // 完成一次動作 — 看 crop stage 決定是「種」還是「收」
+      const wp = this.workplace;
+      const idx = this.target?.cropIdx;
+      if (wp && wp.crops && idx != null) {
+        const c = wp.crops[idx];
+        if (c.stage === 4) {
+          // 收成
+          this.carry.food = (this.carry.food || 0) + 4;
+          c.stage = 0;
+          c.plantedAt = 0;
+          playSfx('success', 0.35);
+        } else if (c.stage === 0) {
+          // 種下
+          c.stage = 1;
+          c.plantedAt = nowSec();
+          playSfx('plant', 0.30);
         }
-        r._claimedBy = null;
+        c.claimedBy = null;
       }
-      // 音效
-      if (this.def.workAnim === 'axe')  playSfx('chop', 0.35);
-      if (this.def.workAnim === 'hoe')  playSfx('plant', 0.3);
-      if (this.def.workAnim === 'water')playSfx('water', 0.25);
-      // 改成回家
-      this.target = { x: this.home.x, y: this.home.y };
-      this.state = NPC_STATE.RETURN;
-      this.setAnim('walk');
+      // 有 carry 就回家儲存，否則繼續找下一格
+      if (this.carry.food && this.carry.food > 0) {
+        this.target = { x: this.home.x, y: this.home.y };
+        this.state = NPC_STATE.RETURN;
+        this.setAnim('walk');
+      } else {
+        this.target = null;
+        this.state = NPC_STATE.IDLE;
+        this.setAnim('idle');
+      }
     }
   }
 
@@ -614,15 +658,13 @@ class Game {
 
     this._setupInput();
     this._setupUI();
-    this._loadSave();
-    this._tickResRespawn = 0;
 
-    // v1.5 改成空世界開局：玩家自己蓋第一棟農舍 + 招募農夫
+    // v1.6：每次重開都全新開始（暫不做存檔系統）
+    try { localStorage.removeItem(SAVE_KEY); } catch(e) {}
+
+    this._tickResRespawn = 0;
     this._renderResUI();
-    if (this.world.buildings.length === 1 && !this._loadedSave) {
-      // 沒讀檔 + 只有主城 → 給玩家提示
-      setTimeout(() => this.toast('💡 點下方「🔨 建造」蓋第一棟農舍'), 800);
-    }
+    setTimeout(() => this.toast('💡 點下方「🔨 建造」蓋一塊農地'), 800);
 
     // BGM — 等使用者互動再播（瀏覽器 autoplay 政策）
     this._muted = localStorage.getItem('idleempire.muted') === '1';
@@ -646,9 +688,8 @@ class Game {
     });
     const stopAll = () => {
       try { if (this.bgm) { this.bgm.pause(); this.bgm.currentTime = 0; } } catch(e){}
-      // 同時停掉所有 SFX cloneNode 殘響
       document.querySelectorAll('audio').forEach(a => { try { a.pause(); } catch(e){} });
-      this._save();
+      // v1.6：不存檔
     };
     window.addEventListener('pagehide', stopAll);
     window.addEventListener('beforeunload', stopAll);
@@ -816,19 +857,23 @@ class Game {
      UI 設置
      ============================================================= */
   _setupUI() {
-    document.getElementById('buildBtn').onclick = () => this._openBuildMenu();
-    document.getElementById('marketBtn').onclick = () => this._openMarket();
-    document.getElementById('helpBtn').onclick = () => document.getElementById('helpMenu').classList.remove('hidden');
-    document.getElementById('closeSide').onclick = () => this._hideSidePanel();
+    // v1.6：UI 點擊一律附帶 click 音效
+    const wrap = (btn, fn) => {
+      if (!btn) return;
+      btn.onclick = (e) => { playSfx('click', 0.4); fn(e); };
+    };
+
+    wrap(document.getElementById('buildBtn'), () => this._openBuildMenu());
+    wrap(document.getElementById('closeSide'), () => this._hideSidePanel());
     document.querySelectorAll('[data-close]').forEach(b => {
-      b.onclick = () => document.getElementById(b.dataset.close).classList.add('hidden');
+      wrap(b, () => document.getElementById(b.dataset.close).classList.add('hidden'));
     });
-    document.getElementById('speedBtn').onclick = () => {
+    wrap(document.getElementById('speedBtn'), () => {
       const cycle = [1, 2, 3];
       const i = cycle.indexOf(this.timeScale);
       this.timeScale = cycle[(i + 1) % cycle.length];
       document.getElementById('speedBtn').textContent = `▶ ${this.timeScale}x`;
-    };
+    });
   }
 
   toggleMute() {
@@ -906,6 +951,8 @@ class Game {
     this._cancelPlacement();
     this._renderResUI();
     this.toast(`✅ ${def.name} 建造中…`);
+    playSfx('chop', 0.5);   // 建造音效（鋸木 / 敲打感）
+    setTimeout(() => playSfx('chop', 0.4), 200);
   }
 
   _spend(cost) {
@@ -981,12 +1028,8 @@ class Game {
       <div class="stat"><span>飢餓度</span><span>${Math.round(n.hunger)}/${n.maxHunger}</span></div>
       <div class="bar hunger"><div style="width:${(n.hunger/n.maxHunger)*100}%"></div></div>
       <div class="stat"><span>狀態</span><span>${this._stateLabel(n.state)}</span></div>
-      <div class="stat"><span>速度</span><span>${Math.round(n.speed)} px/s</span></div>
-      <div class="stat"><span>職業產出</span><span>${Object.entries(n.def.output).map(([k,v])=>this._iconFor(k)+v).join(' ')}</span></div>
-      <button class="actBtn" id="locateBtn">📍 定位到他</button>
     `;
     panel.classList.remove('hidden');
-    document.getElementById('locateBtn').onclick = () => this._centerOn(n.x, n.y);
   }
 
   _stateLabel(s) {
@@ -1133,9 +1176,9 @@ class Game {
       this._save();
     }
 
-    // 建築們：建造完工
+    // 建築：農地的作物自動成長
     for (const b of this.world.buildings) {
-      // 自動建設（不需 npc）
+      if (b.def.isField && b.isBuilt) b.tickGrowth();
     }
 
     // 資源點重生
@@ -1280,39 +1323,19 @@ class Game {
 
   _renderBuildings() {
     const { ctx } = this;
-    // v1.5：所有建築共用乾淨的 farmhouse.png，靠 tint 色澤 + 大小 + 名牌區分
-    const sprite = ASSETS.img.farmhouse;
     for (const b of this.world.buildings) {
       const px = b.tx * TILE, py = b.ty * TILE;
       const dw = b.def.size.w * TILE;
       const dh = b.def.size.h * TILE;
-
-      // 各建築使用同一張 sprite，但縮放比例不同
-      const scale = b.def.scale || 1.0;
-      const drawW = dw * scale * 1.05;
-      const drawH = dh * scale * 1.6;     // farmhouse 比寬還高
-      const drawX = px + dw/2 - drawW/2;
-      const drawY = py + dh - drawH + 8;  // 底部對齊 footprint 底邊
-
-      ctx.save();
-      // 建造中：半透明 + 進度
       const built = b.isBuilt;
-      if (!built) ctx.globalAlpha = 0.4 + 0.5 * b.progress;
 
-      if (sprite) {
-        ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
-        // 上 tint 色澤（only if built）
-        if (built && b.def.tint) {
-          ctx.globalCompositeOperation = 'source-atop';
-          ctx.fillStyle = b.def.tint;
-          ctx.fillRect(drawX, drawY, drawW, drawH);
-          ctx.globalCompositeOperation = 'source-over';
-        }
+      if (b.def.isField) {
+        // === 農地：渲染 soil tile + crop ===
+        this._renderFarmField(b, px, py, dw, dh, built);
       } else {
-        ctx.fillStyle = '#a06a3a';
-        ctx.fillRect(px, py, dw, dh);
+        // === 主城：渲染 farmhouse sprite ===
+        this._renderHouse(b, px, py, dw, dh, built);
       }
-      ctx.restore();
 
       // 建造中進度條
       if (!built) {
@@ -1320,18 +1343,98 @@ class Game {
         ctx.fillStyle = '#e8b73a'; ctx.fillRect(px+8, py + dh - 12, (dw-16)*b.progress, 8);
       }
 
-      // 建築名牌（含對應 emoji）
-      const emoji = b.type === 'townhall' ? '🏛' : b.type === 'farm' ? '🌾' : '💰';
+      // 名牌（主城上方 / 農地左上）
+      const emoji = b.type === 'townhall' ? '🏛' : '🌾';
       const label = `${emoji} ${b.def.name}`;
-      ctx.font = 'bold 16px "Noto Sans TC", "PingFang TC", sans-serif';
+      ctx.font = 'bold 15px "Noto Sans TC", "PingFang TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const tw = ctx.measureText(label).width + 16;
+      const tw = ctx.measureText(label).width + 14;
+      const labY = b.def.isField ? py - 12 : py - dh*0.6 - 8;
       ctx.fillStyle = 'rgba(0,0,0,.7)';
-      ctx.fillRect(px + dw/2 - tw/2, drawY - 22, tw, 20);
+      ctx.fillRect(px + dw/2 - tw/2, labY - 9, tw, 18);
       ctx.fillStyle = '#fff';
-      ctx.fillText(label, px + dw/2, drawY - 12);
+      ctx.fillText(label, px + dw/2, labY);
     }
+  }
+
+  _renderHouse(b, px, py, dw, dh, built) {
+    const { ctx } = this;
+    const sprite = ASSETS.img.farmhouse;
+    if (!sprite) {
+      ctx.fillStyle = '#a06a3a'; ctx.fillRect(px, py, dw, dh);
+      return;
+    }
+    // 主城 3×3 = 192px。farmhouse 原圖 148×292（aspect 1:1.97）
+    // 讓建築看起來像房子而非游泳池：
+    // - drawW = 192 (footprint 滿寬)
+    // - drawH = drawW × 1.97 = 378（保持原 aspect ratio，不被擠扁）
+    const drawW = dw;
+    const drawH = drawW * (sprite.height / sprite.width);
+    const drawX = px;
+    const drawY = py + dh - drawH;     // 底邊對齊 footprint 底邊
+
+    ctx.save();
+    if (!built) ctx.globalAlpha = 0.4 + 0.5 * b.progress;
+    ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
+    ctx.restore();
+  }
+
+  _renderFarmField(b, px, py, dw, dh, built) {
+    const { ctx } = this;
+    const w = b.def.size.w, h = b.def.size.h;
+    // 1. 鋪 soil tile（21 種邊角拼接）
+    for (let cy = 0; cy < h; cy++) {
+      for (let cx = 0; cx < w; cx++) {
+        const key = this._soilTileKey(cx, cy, w, h);
+        const img = ASSETS.img[`soil_${key}`] || ASSETS.img.soil_o;
+        if (img) {
+          ctx.drawImage(img, px + cx*TILE, py + cy*TILE, TILE, TILE);
+        } else {
+          ctx.fillStyle = '#6e4a2a';
+          ctx.fillRect(px + cx*TILE, py + cy*TILE, TILE, TILE);
+        }
+      }
+    }
+    if (!built) {
+      // 建造中半透明覆蓋
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(px, py, dw, dh);
+      ctx.restore();
+    }
+    // 2. 畫 crop（依 stage 顯示嫩苗 / 抽穗 / 結實 / 成熟）
+    if (built && b.crops) {
+      for (let i = 0; i < b.crops.length; i++) {
+        const c = b.crops[i];
+        if (c.stage <= 0) continue;
+        const cx = i % w, cy = Math.floor(i / w);
+        const cornImg = ASSETS.img[`corn_${c.stage - 1}`];
+        if (!cornImg) continue;
+        // corn sprite 尺寸不一，等比縮放讓玉米吃滿一格
+        const tileX = px + cx*TILE, tileY = py + cy*TILE;
+        const ratio = Math.min(TILE / cornImg.width, TILE / cornImg.height);
+        const dw2 = cornImg.width * ratio * 0.85;
+        const dh2 = cornImg.height * ratio * 0.85;
+        ctx.drawImage(cornImg, tileX + TILE/2 - dw2/2, tileY + TILE - dh2 - 4, dw2, dh2);
+      }
+    }
+  }
+
+  // 依格子位置（cx, cy）回傳 soil tile 邊角 key
+  _soilTileKey(cx, cy, w, h) {
+    const top = cy === 0, bot = cy === h - 1;
+    const left = cx === 0, right = cx === w - 1;
+    if (top && left) return 'tl';
+    if (top && right) return 'tr';
+    if (bot && left) return 'bl';
+    if (bot && right) return 'br';
+    if (top) return 'tm';
+    if (bot) return 'bm';
+    if (left) return 'lm';
+    if (right) return 'rm';
+    return 'o';   // 中央
   }
 
   _renderNPCs() {
@@ -1416,57 +1519,9 @@ class Game {
   /* =============================================================
      存檔
      ============================================================= */
-  _save() {
-    try {
-      const data = {
-        v: 1,
-        day: this.day,
-        dayTime: this.dayTime,
-        resources: this.resources,
-        buildings: this.world.buildings.map(b => ({ type: b.type, tx: b.tx, ty: b.ty, builtAt: b.builtAt - nowSec() })),
-        npcs: this.world.npcs
-          .filter(n => n.state !== NPC_STATE.DEAD)
-          .map(n => ({
-            job: n.job,
-            x: n.x, y: n.y, hp: n.hp, hunger: n.hunger,
-            workplaceIdx: n.workplace ? this.world.buildings.indexOf(n.workplace) : -1,
-          })),
-      };
-      localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    } catch (e) { console.warn('save fail', e); }
-  }
+  _save() { /* v1.6：暫不做存檔系統 */ }
 
-  _loadSave() {
-    try {
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return;
-      const d = JSON.parse(raw);
-      this._loadedSave = true;
-      this.day = d.day || 1;
-      this.dayTime = d.dayTime || 0.25;
-      this.resources = { ...STARTING_RES, ...d.resources };
-      // 重建建築（v1.5：忽略已移除的 lumberyard/mine/alchemy）
-      this.world.buildings = this.world.buildings.filter(b => b.type === 'townhall');
-      for (const bs of d.buildings || []) {
-        if (bs.type === 'townhall') continue;
-        if (!BUILDINGS[bs.type]) continue;          // 跳過已移除的建築型別
-        const b = this.world.placeBuilding(bs.type, bs.tx, bs.ty);
-        b.builtAt = nowSec() + (bs.builtAt || 0);
-      }
-      // 重建 NPC（v1.5：忽略已移除的職業）
-      this.world.npcs = [];
-      for (const ns of d.npcs || []) {
-        if (!JOBS[ns.job]) continue;                // 跳過已移除的職業
-        const n = new NPC(ns.job, this.world.townHall);
-        n.x = ns.x; n.y = ns.y; n.hp = ns.hp; n.hunger = ns.hunger;
-        if (ns.workplaceIdx >= 0) {
-          const wp = this.world.buildings[ns.workplaceIdx];
-          if (wp && wp.def.recruits === ns.job) { n.workplace = wp; wp.workers.push(n); }
-        }
-        this.world.npcs.push(n);
-      }
-    } catch (e) { console.warn('load fail', e); }
-  }
+  _loadSave() { /* v1.6：暫不做存檔系統 */ }
 }
 
 /* =============================================================
@@ -1482,9 +1537,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('loadingScreen').style.display = 'none';
     document.getElementById('game').classList.remove('hidden');
     window.GAME = new Game();
-    // 每 30 秒自動存檔
-    setInterval(() => window.GAME._save(), 30000);
-    window.addEventListener('beforeunload', () => window.GAME._save());
+    // v1.6：不做自動存檔
   });
 });
 
