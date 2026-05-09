@@ -97,9 +97,12 @@ const IMG_MANIFEST = (() => {
       }
     }
   }
-  // Buildings — v2.0 用 compact_house.png（裁掉磚紋大段，剩下煙囪+門+水桶，aspect 1:1.33）
-  m.house         = './assets/buildings/compact_house.png';
-  m.farmhouse     = './assets/buildings/farmhouse.png';   // 保留作備用
+  // Buildings — v2.2 用 PIL 繪製的真像素小屋 (96x80, aspect 1:0.83，無反鋸齒、限定調色盤)
+  m.townhall_sprite = './assets/buildings/townhall_pixel.png';
+  m.fence           = './assets/buildings/fence.png';
+  m.scarecrow       = './assets/buildings/scarecrow.png';
+  m.house           = './assets/buildings/compact_house.png';   // fallback
+  m.farmhouse       = './assets/buildings/farmhouse.png';       // fallback
   // Tiles
   m.grass         = './assets/tiles/Grass.png';
   m.hills         = './assets/tiles/Hills.png';
@@ -655,14 +658,23 @@ class NPC {
     const arriveDist = 6;
     if (adx < arriveDist && ady < arriveDist) {
       this.setAnim('idle');
+      this._moveAxis = null;          // 重置軸選擇
       onArrive();
       return;
     }
     this.setAnim('walk');
     const step = this.speed * dt;
-    // v2.1：限制只走上下/左右（不斜線），優先走差距大的軸
+
+    // v2.2：L 型路徑 — 一旦選了軸就走到完成才切。避免每 tick 重選造成抖動。
+    // 規則：先走較長那一軸；該軸走到 < arriveDist 才切到另一軸。
+    if (!this._moveAxis) {
+      this._moveAxis = adx >= ady ? 'x' : 'y';
+    }
+    if (this._moveAxis === 'x' && adx < arriveDist) this._moveAxis = 'y';
+    if (this._moveAxis === 'y' && ady < arriveDist) this._moveAxis = 'x';
+
     let nx = this.x, ny = this.y;
-    if (adx >= ady) {
+    if (this._moveAxis === 'x') {
       nx = this.x + Math.sign(dx) * Math.min(adx, step);
       this.dir = dx > 0 ? 'right' : 'left';
     } else {
@@ -1070,8 +1082,8 @@ class Game {
       const costStr = Object.entries(nu.cost).map(([k,v]) => `${this._resName(k)} ${v}`).join('  ');
       const canUp = this._canAfford(nu.cost);
       const benefit = [];
-      if (nu.growMul && nu.growMul < 1) benefit.push(`成長速度 +${Math.round((1/nu.growMul - 1)*100)}%`);
-      if (nu.yieldBonus) benefit.push(`每收多 ${nu.yieldBonus} 糧`);
+      if (nu.growMul && nu.growMul < 1) benefit.push(`成長速度提升 ${Math.round((1/nu.growMul - 1)*100)}%`);
+      if (nu.yieldBonus) benefit.push(`每次收成多 ${nu.yieldBonus} 糧食`);
       upgradeHtml = `
         <h3>升級到 Lv ${b.level + 1}</h3>
         <div class="stat"><span>效果</span><span>${benefit.join('，')}</span></div>
@@ -1544,13 +1556,21 @@ class Game {
         ctx.fillStyle = '#e8b73a'; ctx.fillRect(px+8, py + dh - 12, (dw-16)*b.progress, 8);
       }
 
-      // 名牌（純文字，無 emoji）
+      // 名牌（緊貼建築頂部，不再離很遠）
       const label = b.def.name;
       ctx.font = 'bold 14px "Noto Sans TC", "PingFang TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const tw = ctx.measureText(label).width + 14;
-      const labY = b.def.isField ? py - 12 : py - dh*0.55 - 8;
+      // 主城 sprite 高 160px，從 py+dh 向上 → 頂端 = py+dh-160+8 = py-24（若 dh=128）
+      // 名牌貼在「建築 sprite 視覺頂部」上方 4px
+      let labY;
+      if (b.def.isField) {
+        labY = py - 12;
+      } else {
+        // 主城：sprite 視覺頂部在 py - (dh*1.25 - dh) = py - 32 附近
+        labY = py - dh * 0.25 - 8;
+      }
       ctx.fillStyle = 'rgba(0,0,0,.65)';
       ctx.fillRect(px + dw/2 - tw/2, labY - 9, tw, 18);
       ctx.fillStyle = '#fff';
@@ -1560,82 +1580,25 @@ class Game {
 
   _renderHouse(b, px, py, dw, dh, built) {
     const { ctx } = this;
-    // v2.1：主城改用 canvas 程式繪製童話小屋（牆+屋頂+門+窗+煙囪），明顯像房子
+    // v2.2：用 PIL 預先繪製的真像素 sprite（townhall_pixel.png 96x80）
+    const sprite = ASSETS.img.townhall_sprite;
+    if (!sprite) {
+      ctx.fillStyle = '#a06a3a';
+      ctx.fillRect(px, py, dw, dh);
+      return;
+    }
     ctx.save();
     if (!built) ctx.globalAlpha = 0.4 + 0.5 * b.progress;
 
-    const cx = px + dw/2;
-    const baseY = py + dh - 4;
-    const houseW = dw * 0.78;
-    const houseH = dh * 0.50;
-    const roofH = houseH * 0.68;
-    const roofOver = 6;
+    // 比例：footprint 2x2 = 128x128，sprite 96x80，整數倍放大保持像素硬邊
+    const scale = 2;            // 96x80 → 192x160（橫超出 footprint，但屋頂自然向上延伸沒問題）
+    const drawW = sprite.width * scale;
+    const drawH = sprite.height * scale;
+    const drawX = px + dw/2 - drawW/2;
+    const drawY = py + dh - drawH + 8;
 
-    // 牆壁（米黃）+ 邊框
-    ctx.fillStyle = '#e0b888';
-    ctx.fillRect(cx - houseW/2, baseY - houseH, houseW, houseH);
-    ctx.strokeStyle = '#4a2a18';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(cx - houseW/2, baseY - houseH, houseW, houseH);
-
-    // 屋頂（紅褐三角形）
-    ctx.fillStyle = '#a04830';
-    ctx.beginPath();
-    ctx.moveTo(cx - houseW/2 - roofOver, baseY - houseH);
-    ctx.lineTo(cx, baseY - houseH - roofH);
-    ctx.lineTo(cx + houseW/2 + roofOver, baseY - houseH);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    // 屋頂上的橫條 (像瓦片紋路)
-    ctx.strokeStyle = '#7a3020';
-    ctx.lineWidth = 1;
-    for (let i = 1; i < 4; i++) {
-      const yy = baseY - houseH - roofH * (1 - i*0.25);
-      const w  = (houseW + roofOver*2) * (i*0.25);
-      ctx.beginPath();
-      ctx.moveTo(cx - w/2, yy);
-      ctx.lineTo(cx + w/2, yy);
-      ctx.stroke();
-    }
-
-    // 煙囪
-    ctx.fillStyle = '#6a4028';
-    ctx.fillRect(cx + houseW * 0.22, baseY - houseH - roofH * 0.55, 10, 18);
-    ctx.strokeStyle = '#4a2a18';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(cx + houseW * 0.22, baseY - houseH - roofH * 0.55, 10, 18);
-
-    // 門（中間）
-    const doorW = houseW * 0.28, doorH = houseH * 0.55;
-    ctx.fillStyle = '#5a3018';
-    ctx.fillRect(cx - doorW/2, baseY - doorH, doorW, doorH);
-    ctx.strokeRect(cx - doorW/2, baseY - doorH, doorW, doorH);
-    // 門把
-    ctx.fillStyle = '#e8c038';
-    ctx.fillRect(cx + doorW/2 - 5, baseY - doorH/2, 3, 3);
-
-    // 窗戶兩個（門兩邊）
-    const winW = houseW * 0.16, winH = houseH * 0.22;
-    const winY = baseY - houseH * 0.7;
-    ctx.fillStyle = '#a8d8e8';
-    ctx.fillRect(cx - houseW * 0.32, winY, winW, winH);
-    ctx.fillRect(cx + houseW * 0.16, winY, winW, winH);
-    ctx.strokeStyle = '#4a2a18';
-    ctx.strokeRect(cx - houseW * 0.32, winY, winW, winH);
-    ctx.strokeRect(cx + houseW * 0.16, winY, winW, winH);
-    // 十字框
-    ctx.beginPath();
-    ctx.moveTo(cx - houseW * 0.32 + winW/2, winY);
-    ctx.lineTo(cx - houseW * 0.32 + winW/2, winY + winH);
-    ctx.moveTo(cx - houseW * 0.32, winY + winH/2);
-    ctx.lineTo(cx - houseW * 0.32 + winW, winY + winH/2);
-    ctx.moveTo(cx + houseW * 0.16 + winW/2, winY);
-    ctx.lineTo(cx + houseW * 0.16 + winW/2, winY + winH);
-    ctx.moveTo(cx + houseW * 0.16, winY + winH/2);
-    ctx.lineTo(cx + houseW * 0.16 + winW, winY + winH/2);
-    ctx.stroke();
-
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
     ctx.restore();
   }
 
@@ -1664,14 +1627,27 @@ class Game {
       ctx.restore();
     }
     if (!built) {
-      // 建造中半透明覆蓋
       ctx.save();
       ctx.globalAlpha = 0.5;
       ctx.fillStyle = '#000';
       ctx.fillRect(px, py, dw, dh);
       ctx.restore();
     }
-    // 2. 畫 crop（依 stage 顯示嫩苗 / 抽穗 / 結實 / 成熟）
+
+    // 2. 圍籬：四周貼 fence sprite（v2.2 精緻化）
+    const fence = ASSETS.img.fence;
+    if (built && fence) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      const fW = TILE, fH = TILE * 0.5;
+      // 上方
+      for (let cx = 0; cx < w; cx++) ctx.drawImage(fence, px + cx*TILE, py - fH * 0.4, fW, fH);
+      // 下方
+      for (let cx = 0; cx < w; cx++) ctx.drawImage(fence, px + cx*TILE, py + h*TILE - fH * 0.6, fW, fH);
+      ctx.restore();
+    }
+
+    // 3. 玉米作物（每階段都顯示）
     if (built && b.crops) {
       for (let i = 0; i < b.crops.length; i++) {
         const c = b.crops[i];
@@ -1679,13 +1655,24 @@ class Game {
         const cx = i % w, cy = Math.floor(i / w);
         const cornImg = ASSETS.img[`corn_${c.stage - 1}`];
         if (!cornImg) continue;
-        // corn sprite 尺寸不一，等比縮放讓玉米吃滿一格
         const tileX = px + cx*TILE, tileY = py + cy*TILE;
         const ratio = Math.min(TILE / cornImg.width, TILE / cornImg.height);
         const dw2 = cornImg.width * ratio * 0.85;
         const dh2 = cornImg.height * ratio * 0.85;
         ctx.drawImage(cornImg, tileX + TILE/2 - dw2/2, tileY + TILE - dh2 - 4, dw2, dh2);
       }
+    }
+
+    // 4. 稻草人：每塊農地中央放一個（裝飾）
+    const sc = ASSETS.img.scarecrow;
+    if (built && sc) {
+      ctx.imageSmoothingEnabled = false;
+      const scScale = 1.5;
+      const scW = sc.width * scScale, scH = sc.height * scScale;
+      // 放在農地最後一行的左上角第一格（不擋作物）
+      const scX = px + dw - scW - 6;
+      const scY = py + dh - scH - 4;
+      ctx.drawImage(sc, scX, scY, scW, scH);
     }
   }
 
