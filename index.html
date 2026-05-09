@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idle Empire — 像素放置王國</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Noto+Sans+TC:wght@500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <!-- 載入畫面 -->
+  <div id="loadingScreen">
+    <div class="loading-inner">
+      <div class="loading-title">IDLE EMPIRE</div>
+      <div class="loading-subtitle">像素放置王國</div>
+      <div class="loading-bar"><div id="loadingFill"></div></div>
+      <div id="loadingStatus">準備中…</div>
+    </div>
+  </div>
+
+  <!-- 主遊戲容器 -->
+  <div id="game" class="hidden">
+    <canvas id="world"></canvas>
+
+    <!-- 頂部資源欄 -->
+    <div id="topBar">
+      <div class="res" data-res="gold"   title="金幣"><span class="icon">⛁</span><span class="val">0</span></div>
+      <div class="res" data-res="wood"   title="木材"><span class="icon">🪵</span><span class="val">0</span></div>
+      <div class="res" data-res="ore"    title="礦石"><span class="icon">⛏</span><span class="val">0</span></div>
+      <div class="res" data-res="food"   title="糧食"><span class="icon">🌾</span><span class="val">0</span></div>
+      <div class="res" data-res="potion" title="藥水"><span class="icon">⚗</span><span class="val">0</span></div>
+
+      <div class="spacer"></div>
+
+      <div id="dayInfo">
+        <span id="dayLabel">Day 1</span>
+        <span id="timeLabel">早晨</span>
+        <button id="muteBtn" title="切換音樂">🔊</button>
+        <button id="speedBtn" title="切換遊戲速度">▶ 1x</button>
+      </div>
+    </div>
+
+    <!-- 提示飄字層（由 JS 操作） -->
+    <div id="floaters"></div>
+
+    <!-- 右側狀態 / 詳情面板 -->
+    <aside id="sidePanel" class="hidden">
+      <button class="closeBtn" id="closeSide">✕</button>
+      <div id="sideContent"></div>
+    </aside>
+
+    <!-- 底部建造選單 -->
+    <div id="bottomBar">
+      <button class="bigBtn" id="buildBtn">🔨 建造</button>
+      <button class="bigBtn" id="marketBtn">💰 市場</button>
+      <button class="bigBtn" id="helpBtn">❓ 玩法</button>
+    </div>
+
+    <!-- 建造選單彈窗 -->
+    <div id="buildMenu" class="modal hidden">
+      <div class="modal-inner">
+        <h2>選擇要建造的建築</h2>
+        <div id="buildList"></div>
+        <button class="closeBtn" data-close="buildMenu">✕</button>
+      </div>
+    </div>
+
+    <!-- 市場彈窗 -->
+    <div id="marketMenu" class="modal hidden">
+      <div class="modal-inner">
+        <h2>📜 市場交易所</h2>
+        <p class="hint">把你的資源換成金幣 — 招募更多 NPC、蓋更多建築。</p>
+        <div id="marketList"></div>
+        <button class="closeBtn" data-close="marketMenu">✕</button>
+      </div>
+    </div>
+
+    <!-- 玩法說明彈窗 -->
+    <div id="helpMenu" class="modal hidden">
+      <div class="modal-inner">
+        <h2>📖 玩法簡介</h2>
+        <ul>
+          <li>🖱 <b>拖曳</b>地圖移動鏡頭，<b>滾輪</b>縮放。</li>
+          <li>🏠 點擊<b>建築</b>查看狀態 / 招募 NPC / 升級。</li>
+          <li>🧑‍🌾 點擊<b>NPC</b>查看血量、飢餓度、目前任務。</li>
+          <li>🔨 用木材蓋建築，建築招募 NPC 自動開始工作。</li>
+          <li>🌾 NPC 會自動採集 → 回家儲存 → 餓了會吃糧食。</li>
+          <li>💰 在<b>市場</b>把資源換金幣，金幣用來招募。</li>
+          <li>💀 NPC 飢餓歸零會慢慢死亡，要養好他們！</li>
+        </ul>
+        <button class="closeBtn" data-close="helpMenu">✕</button>
+      </div>
+    </div>
+
+    <!-- 建造擺放提示 -->
+    <div id="placementHint" class="hidden">
+      <span id="placementText">點擊空地擺放，按 ESC 取消</span>
+    </div>
+
+    <!-- 警告浮窗 -->
+    <div id="toast" class="hidden"></div>
+  </div>
+
+  <script src="./game.js"></script>
+</body>
+</html>

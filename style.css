@@ -1,0 +1,322 @@
+/* ============================================================
+   IDLE EMPIRE — 像素風 UI
+   星露谷色調：暖米黃 + 木紋棕 + 草原綠
+   ============================================================ */
+:root {
+  --c-bg: #2a1f17;
+  --c-panel: #f4e2b8;
+  --c-panel-dark: #d8be84;
+  --c-border: #5a3a22;
+  --c-border-lite: #8d5a30;
+  --c-text: #2e1d10;
+  --c-accent: #c8852b;
+  --c-good: #4f8a3a;
+  --c-bad: #b53a2c;
+  --c-gold: #e8b73a;
+  --c-wood: #a06a3a;
+  --c-ore: #7a8c9c;
+  --c-food: #d6a52a;
+  --c-potion: #5fa84e;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+
+/* 字體分工：中文用 Noto Sans TC（極清晰）、英數用 Pixelify Sans（保留像素風） */
+body {
+  font-family: 'Pixelify Sans', 'Noto Sans TC',
+               -apple-system, 'PingFang TC', 'Microsoft JhengHei',
+               'Segoe UI', sans-serif;
+  font-weight: 700;
+  color: var(--c-text);
+  background: #000;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: .3px;
+}
+img, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
+.hidden { display: none !important; }
+
+/* 工具類：純像素數字（資源計數、時鐘） */
+.pixfont { font-family: 'Pixelify Sans', 'Noto Sans TC', sans-serif; }
+/* 工具類：純中文清晰（內文敘述） */
+.cnfont { font-family: 'Noto Sans TC', -apple-system, 'PingFang TC', 'Microsoft JhengHei', sans-serif; }
+
+/* ============================================================
+   載入畫面
+   ============================================================ */
+#loadingScreen {
+  position: fixed; inset: 0;
+  background: linear-gradient(180deg, #5a3a22 0%, #2a1f17 100%);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+  color: #f4e2b8;
+}
+.loading-inner { text-align: center; min-width: 360px; }
+.loading-title {
+  font-size: 56px; letter-spacing: 4px; color: #f4e2b8;
+  text-shadow: 4px 4px 0 #2a1f17;
+  font-family: 'Pixelify Sans', sans-serif;
+}
+.loading-subtitle {
+  font-size: 18px; color: #d8be84; margin: 8px 0 28px;
+  font-family: 'Noto Sans TC', sans-serif;
+  letter-spacing: 2px;
+}
+.loading-bar {
+  height: 14px; background: #2a1f17; border: 3px solid #f4e2b8;
+  border-radius: 0; overflow: hidden;
+}
+#loadingFill {
+  height: 100%; width: 0%;
+  background: repeating-linear-gradient(45deg,
+    #c8852b 0 6px, #e8b73a 6px 12px);
+  transition: width .25s linear;
+}
+#loadingStatus { font-size: 13px; margin-top: 10px; color: #b89868; }
+
+/* ============================================================
+   遊戲畫布
+   ============================================================ */
+#game { position: fixed; inset: 0; }
+#world {
+  display: block;
+  width: 100%; height: 100%;
+  cursor: grab;
+  background: #2a3018;
+}
+#world.dragging { cursor: grabbing; }
+#world.placing { cursor: crosshair; }
+
+/* ============================================================
+   頂部資源欄
+   ============================================================ */
+#topBar {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, rgba(244,226,184,.96), rgba(216,190,132,.96));
+  border-bottom: 3px solid var(--c-border);
+  box-shadow: 0 4px 0 rgba(0,0,0,.3);
+  z-index: 10;
+}
+#topBar .res {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--c-panel);
+  border: 2px solid var(--c-border);
+  padding: 6px 12px;
+  font-size: 17px;
+  min-width: 92px;
+  position: relative;
+}
+#topBar .res .icon { font-size: 18px; filter: grayscale(.05); }
+#topBar .res .val {
+  font-family: 'Pixelify Sans', sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+}
+#topBar .res[data-res="gold"]   { background: #fff4cf; }
+#topBar .res[data-res="wood"]   { background: #f0d9b8; }
+#topBar .res[data-res="ore"]    { background: #d8dee4; }
+#topBar .res[data-res="food"]   { background: #fae8a8; }
+#topBar .res[data-res="potion"] { background: #d8ecc8; }
+#topBar .spacer { flex: 1; }
+
+#dayInfo {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 16px;
+}
+#dayInfo #dayLabel { font-family: 'Pixelify Sans', sans-serif; font-size: 18px; }
+#dayInfo #timeLabel { color: var(--c-border); font-size: 14px; font-family: 'Noto Sans TC', sans-serif; }
+#speedBtn, #muteBtn {
+  border: 2px solid var(--c-border);
+  background: var(--c-panel);
+  padding: 5px 11px; font-family: 'Pixelify Sans', sans-serif; font-weight: 700;
+  cursor: pointer; font-size: 16px;
+}
+#speedBtn:hover, #muteBtn:hover { background: #fff4cf; }
+
+/* ============================================================
+   底部按鈕欄
+   ============================================================ */
+#bottomBar {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 12px;
+  z-index: 10;
+}
+.bigBtn {
+  font-family: 'Noto Sans TC', sans-serif; font-weight: 900; font-size: 17px;
+  padding: 12px 26px;
+  background: var(--c-panel);
+  border: 3px solid var(--c-border);
+  box-shadow: 0 4px 0 var(--c-border);
+  cursor: pointer; color: var(--c-text);
+  transition: transform .04s, box-shadow .04s;
+  letter-spacing: 2px;
+}
+.bigBtn:hover { background: #fff4cf; }
+.bigBtn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--c-border); }
+
+/* ============================================================
+   側邊面板（建築/NPC 詳情）
+   ============================================================ */
+#sidePanel {
+  position: absolute; top: 60px; right: 14px; bottom: 80px;
+  width: 320px;
+  background: var(--c-panel);
+  border: 3px solid var(--c-border);
+  box-shadow: 4px 4px 0 rgba(0,0,0,.3);
+  padding: 14px;
+  overflow-y: auto;
+  z-index: 8;
+}
+#sidePanel h2 { font-size: 20px; margin-bottom: 8px; color: var(--c-border); border-bottom: 2px dashed var(--c-border-lite); padding-bottom: 6px; font-family: 'Noto Sans TC', sans-serif; letter-spacing: 1px; }
+#sidePanel h3 { font-size: 15px; margin: 10px 0 4px; font-family: 'Noto Sans TC', sans-serif; }
+#sidePanel .stat { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; font-family: 'Noto Sans TC', sans-serif; }
+#sidePanel .stat span:last-child { font-family: 'Pixelify Sans', sans-serif; font-size: 15px; }
+#sidePanel .bar { background: #2a1f17; border: 2px solid var(--c-border); height: 12px; margin: 4px 0 8px; position: relative; }
+#sidePanel .bar > div { height: 100%; transition: width .2s; }
+#sidePanel .bar.hp > div { background: linear-gradient(90deg, #d65a3a, #f08858); }
+#sidePanel .bar.hunger > div { background: linear-gradient(90deg, #c8852b, #e8b73a); }
+#sidePanel .actBtn {
+  width: 100%; margin-top: 8px;
+  padding: 10px; font-family: inherit; font-weight: 700; font-size: 14px;
+  background: var(--c-good); color: #fff;
+  border: 2px solid #2a4a1a; box-shadow: 0 3px 0 #2a4a1a;
+  cursor: pointer;
+}
+#sidePanel .actBtn:hover { filter: brightness(1.1); }
+#sidePanel .actBtn:disabled { background: #888; border-color: #444; box-shadow: 0 3px 0 #444; cursor: not-allowed; }
+#sidePanel .actBtn.danger { background: var(--c-bad); border-color: #6a1a14; box-shadow: 0 3px 0 #6a1a14; }
+#sidePanel .npcCard {
+  border: 2px solid var(--c-border-lite);
+  padding: 6px; margin: 4px 0;
+  background: rgba(255,255,255,.4);
+  font-size: 12px;
+  cursor: pointer;
+}
+#sidePanel .npcCard:hover { background: rgba(255,255,255,.7); }
+
+.closeBtn {
+  position: absolute; top: 6px; right: 6px;
+  width: 28px; height: 28px;
+  border: 2px solid var(--c-border);
+  background: var(--c-bad); color: #fff;
+  font-family: inherit; font-weight: 700; cursor: pointer;
+  font-size: 14px;
+}
+
+/* ============================================================
+   建造選單 / 市場 / 玩法 共用 Modal
+   ============================================================ */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+}
+.modal-inner {
+  background: var(--c-panel);
+  border: 3px solid var(--c-border);
+  box-shadow: 6px 6px 0 rgba(0,0,0,.3);
+  padding: 20px 22px;
+  max-width: 540px; width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+}
+.modal-inner h2 { font-size: 22px; margin-bottom: 12px; color: var(--c-border); font-family: 'Noto Sans TC', sans-serif; letter-spacing: 1px; }
+.modal-inner ul { list-style: none; padding: 0; }
+.modal-inner li { font-size: 15px; padding: 7px 0; border-bottom: 1px dashed var(--c-border-lite); font-family: 'Noto Sans TC', sans-serif; line-height: 1.5; }
+.modal-inner .hint { font-size: 14px; color: var(--c-border-lite); margin-bottom: 12px; font-family: 'Noto Sans TC', sans-serif; }
+
+.buildCard, .marketRow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px;
+  border: 2px solid var(--c-border-lite);
+  background: #fff4cf;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: transform .04s;
+}
+.buildCard:hover, .marketRow:hover { background: #fff8e1; transform: translateX(3px); }
+.buildCard.disabled, .marketRow.disabled { opacity: .5; cursor: not-allowed; }
+.buildCard .info, .marketRow .info { flex: 1; }
+.buildCard .name, .marketRow .name { font-size: 17px; font-family: 'Noto Sans TC', sans-serif; }
+.buildCard .desc { font-size: 13px; color: var(--c-border-lite); font-family: 'Noto Sans TC', sans-serif; line-height: 1.4; margin: 3px 0; }
+.buildCard .cost, .marketRow .cost { font-size: 14px; color: var(--c-border); font-family: 'Pixelify Sans', sans-serif; }
+.buildCard .preview { width: 56px; height: 56px; image-rendering: pixelated; }
+
+.marketRow .qtyBtn {
+  font-family: 'Noto Sans TC', sans-serif; font-weight: 900;
+  background: var(--c-accent); color: #fff;
+  border: 2px solid var(--c-border); padding: 7px 14px;
+  cursor: pointer; box-shadow: 0 2px 0 var(--c-border);
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+.marketRow .qtyBtn:hover { filter: brightness(1.1); }
+.marketRow .qtyBtn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ============================================================
+   擺放提示
+   ============================================================ */
+#placementHint {
+  position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+  background: var(--c-panel);
+  border: 3px solid var(--c-border);
+  padding: 6px 14px;
+  font-size: 13px;
+  z-index: 50;
+  box-shadow: 0 3px 0 var(--c-border);
+  animation: bobIn .3s ease;
+}
+@keyframes bobIn {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ============================================================
+   飄字提示
+   ============================================================ */
+#floaters {
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  overflow: hidden;
+}
+.floater {
+  position: absolute;
+  font-size: 17px; font-weight: 700;
+  font-family: 'Pixelify Sans', sans-serif;
+  text-shadow: 1px 1px 0 #000, 2px 2px 0 #000, 0 0 4px rgba(0,0,0,.6);
+  animation: floatUp 1.2s forwards;
+  pointer-events: none;
+}
+.floater.gain { color: #ffd84a; }
+.floater.lose { color: #ff7a5c; }
+.floater.info { color: #aef0ff; }
+@keyframes floatUp {
+  0% { opacity: 0; transform: translate(-50%, 0); }
+  15% { opacity: 1; transform: translate(-50%, -8px); }
+  100% { opacity: 0; transform: translate(-50%, -36px); }
+}
+
+/* ============================================================
+   Toast 警告
+   ============================================================ */
+#toast {
+  position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
+  background: var(--c-bad); color: #fff;
+  padding: 11px 22px;
+  border: 3px solid #6a1a14;
+  box-shadow: 0 4px 0 #6a1a14;
+  z-index: 200;
+  font-size: 16px;
+  font-family: 'Noto Sans TC', sans-serif;
+  font-weight: 700;
+  letter-spacing: 1px;
+  animation: bobIn .3s ease;
+}
+
+#placementHint { font-size: 14px; font-family: 'Noto Sans TC', sans-serif; }
