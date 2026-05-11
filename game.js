@@ -645,9 +645,9 @@ function setupChartGesture() {
 }
 
 function init() {
-  // 暖場 60 tick
+  // 暖場 600 tick (一開局就有 10 分鐘歷史，時間軸合理分散)
   state.prices = [{ t: 0, p: state.basePrice, v: 1000 }];
-  for (let i = 1; i < 60; i++) {
+  for (let i = 1; i < 600; i++) {
     state.tick = i;
     const next = nextPrice();
     state.prices.push({ t: i, p: next.p, v: next.v });
