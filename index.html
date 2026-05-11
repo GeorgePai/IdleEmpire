@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=5">
+<link rel="stylesheet" href="./style.css?v=6">
 </head>
 <body>
   <div id="app">
@@ -20,24 +20,25 @@
           <span class="dot live"></span>
         </div>
         <div class="topActions">
+          <button id="ordersBtn" title="委託明細">委託</button>
           <button id="indicatorBtn" title="指標選單">指標</button>
           <button id="muteBtn" title="切換音樂">♪</button>
         </div>
       </div>
 
-      <!-- 倉位資訊面板 v0.4 重新設計 -->
+      <!-- 倉位資訊面板 -->
       <div id="positionPanel">
-        <div class="posRow posMain">
-          <div class="posLeft">
+        <div class="posMain">
+          <div class="posCol">
             <div class="posLabel">即時價</div>
             <div class="posValue priceVal" id="priceNow">100.00</div>
             <div class="posTick" id="priceChange">+0.00 (+0.00%)</div>
           </div>
           <div class="posDivider"></div>
-          <div class="posRight">
+          <div class="posCol posRight">
             <div class="posLabel">未實現損益</div>
-            <div class="posPnl" id="pnlPct">+0.00%</div>
-            <div class="posTick" id="pnlAmount">+0.00</div>
+            <div class="posPnl" id="unrealPnlPct">+0.00%</div>
+            <div class="posTick" id="unrealPnlAmount">+0.00</div>
           </div>
         </div>
         <div class="posRow posSub">
@@ -52,6 +53,10 @@
           <div class="posItem">
             <span class="posKey">成本</span>
             <span class="posVal" id="avgCostLabel">--</span>
+          </div>
+          <div class="posItem">
+            <span class="posKey">已實現</span>
+            <span class="posVal" id="realPnlLabel">+0.00</span>
           </div>
           <div class="posItem highlight">
             <span class="posKey">總資產</span>
@@ -70,68 +75,104 @@
       </div>
     </header>
 
-    <section id="indicatorDrawer" class="hidden">
-      <div class="drawerRow">
-        <div class="drawerLabel">K 線週期</div>
-        <div class="drawerControls">
-          <button class="periodBtn" data-period="5">5 秒</button>
-          <button class="periodBtn active" data-period="15">15 秒</button>
-          <button class="periodBtn" data-period="30">30 秒</button>
+    <!-- 指標浮層 (popover) -->
+    <div id="indicatorOverlay" class="overlay hidden">
+      <div class="overlayPanel" id="indicatorDrawer">
+        <div class="overlayHeader">
+          <span class="overlayTitle">指標設定</span>
+          <button class="overlayClose" data-close="indicatorOverlay">✕</button>
+        </div>
+        <div class="drawerRow">
+          <div class="drawerLabel">K 線週期</div>
+          <div class="drawerControls">
+            <button class="periodBtn active" data-period="5">5 秒</button>
+            <button class="periodBtn" data-period="15">15 秒</button>
+            <button class="periodBtn" data-period="30">30 秒</button>
+          </div>
+        </div>
+        <div class="drawerRow">
+          <div class="drawerLabel">均線 1</div>
+          <div class="drawerControls">
+            <input type="number" id="ma1Input" min="1" max="200" value="5" class="maInput">
+            <span class="maColorDot ma1Color"></span>
+            <label class="switch">
+              <input type="checkbox" id="ma1Toggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="drawerRow">
+          <div class="drawerLabel">均線 2</div>
+          <div class="drawerControls">
+            <input type="number" id="ma2Input" min="1" max="200" value="20" class="maInput">
+            <span class="maColorDot ma2Color"></span>
+            <label class="switch">
+              <input type="checkbox" id="ma2Toggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="drawerRow">
+          <div class="drawerLabel">副圖</div>
+          <div class="drawerControls">
+            <label class="checkbox">
+              <input type="checkbox" id="volToggle">
+              <span>成交量</span>
+            </label>
+            <label class="checkbox">
+              <input type="checkbox" id="chipToggle">
+              <span>籌碼分佈</span>
+            </label>
+          </div>
         </div>
       </div>
-      <div class="drawerRow">
-        <div class="drawerLabel">均線 1</div>
-        <div class="drawerControls">
-          <input type="number" id="ma1Input" min="1" max="200" value="5" class="maInput">
-          <span class="maColorDot ma1Color"></span>
-          <label class="switch">
-            <input type="checkbox" id="ma1Toggle" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
-      </div>
-      <div class="drawerRow">
-        <div class="drawerLabel">均線 2</div>
-        <div class="drawerControls">
-          <input type="number" id="ma2Input" min="1" max="200" value="20" class="maInput">
-          <span class="maColorDot ma2Color"></span>
-          <label class="switch">
-            <input type="checkbox" id="ma2Toggle" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
-      </div>
-      <div class="drawerRow">
-        <div class="drawerLabel">副圖</div>
-        <div class="drawerControls">
-          <label class="checkbox">
-            <input type="checkbox" id="volToggle">
-            <span>成交量</span>
-          </label>
-          <label class="checkbox">
-            <input type="checkbox" id="chipToggle">
-            <span>籌碼分佈</span>
-          </label>
-        </div>
-      </div>
-      <div class="drawerRow">
-        <div class="drawerLabel">提示</div>
-        <div class="drawerControls drawerHint">圖表左右滑動看歷史、上下滑動調縮放</div>
-      </div>
-    </section>
+    </div>
 
+    <!-- 委託明細浮層 -->
+    <div id="ordersOverlay" class="overlay hidden">
+      <div class="overlayPanel large">
+        <div class="overlayHeader">
+          <span class="overlayTitle">委託明細</span>
+          <button class="overlayClose" data-close="ordersOverlay">✕</button>
+        </div>
+        <div class="orderTabs">
+          <button class="orderTab active" data-tab="pending">待成交</button>
+          <button class="orderTab" data-tab="history">歷史成交</button>
+        </div>
+        <div id="pendingTab" class="orderTabPane">
+          <div id="pendingList" class="orderList">
+            <div class="orderEmpty">尚無掛單</div>
+          </div>
+        </div>
+        <div id="historyTab" class="orderTabPane hidden">
+          <div id="historyList" class="orderList">
+            <div class="orderEmpty">尚無歷史</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主圖區（K 線 + 並排籌碼） -->
     <section id="chartPanel">
       <div class="chartHeader">
         <div class="legendRow" id="maLegend">
-          <span class="legendDot ma1Color"></span><span id="ma1Label">MA 5</span>
-          <span class="legendDot ma2Color"></span><span id="ma2Label">MA 20</span>
+          <span class="legendItem" id="ma1Legend">
+            <span class="legendDot ma1Color"></span><span id="ma1Label">MA 5</span>
+          </span>
+          <span class="legendItem" id="ma2Legend">
+            <span class="legendDot ma2Color"></span><span id="ma2Label">MA 20</span>
+          </span>
         </div>
         <button id="resetViewBtn" class="resetBtn hidden">回到最新</button>
       </div>
-      <canvas id="priceChart"></canvas>
+      <div class="chartBody">
+        <canvas id="priceChart"></canvas>
+        <canvas id="chipChart" class="chipSide hidden"></canvas>
+      </div>
       <div class="timeAxis" id="timeAxis"></div>
     </section>
 
+    <!-- 副圖：成交量（chip 不在這） -->
     <section id="subPanels" class="hidden">
       <div class="subBox" id="volBox">
         <div class="subHeader">
@@ -140,22 +181,24 @@
         </div>
         <canvas id="volChart"></canvas>
       </div>
-      <div class="subBox" id="chipBox">
-        <div class="subHeader">
-          <span class="subTitle">籌碼分佈</span>
-          <span class="subVal numfont" id="chipMaxLabel"></span>
-        </div>
-        <canvas id="chipChart"></canvas>
-      </div>
     </section>
 
+    <!-- 操作區 -->
     <section id="tradePanel">
+      <div class="modeRow">
+        <button class="modeBtn active" data-mode="market">市價</button>
+        <button class="modeBtn" data-mode="limit">限價</button>
+      </div>
       <div class="qtyRow">
         <button class="qtyBtn" data-qty="10">10</button>
         <button class="qtyBtn active" data-qty="100">100</button>
         <button class="qtyBtn" data-qty="1000">1K</button>
         <button class="qtyBtn" data-qty="max">全</button>
         <input id="qtyInput" type="number" min="1" inputmode="numeric">
+      </div>
+      <div class="limitPriceRow hidden" id="limitPriceRow">
+        <span class="limitLabel">目標價</span>
+        <input id="limitPriceInput" type="number" step="0.01" min="0.01" inputmode="decimal">
       </div>
       <div class="btnRow">
         <button id="buyBtn" class="bigBtn buy">買 入</button>
@@ -178,6 +221,6 @@
 
     <div id="toast" class="hidden"></div>
   </div>
-  <script src="./game.js?v=5"></script>
+  <script src="./game.js?v=6"></script>
 </body>
 </html>
