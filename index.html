@@ -3,78 +3,126 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Idle Empire — 像素放置王國</title>
+<meta name="theme-color" content="#0a0e14">
+<title>Idle Investor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=36">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css?v=2">
 </head>
 <body>
-  <!-- 載入畫面 -->
-  <div id="loadingScreen">
-    <div class="loading-inner">
-      <div class="loading-title">IDLE EMPIRE</div>
-      <div class="loading-subtitle">像素放置王國</div>
-      <div class="loading-bar"><div id="loadingFill"></div></div>
-      <div id="loadingStatus">準備中</div>
-    </div>
-  </div>
+  <div id="app">
+    <header id="topBar">
+      <div class="brandRow">
+        <div class="brand">
+          <span class="brandSymbol">IDX</span>
+          <span class="brandName">幻象指數</span>
+          <span class="dot live"></span>
+        </div>
+        <div class="topActions">
+          <button id="muteBtn" title="切換音樂">♪</button>
+        </div>
+      </div>
+      <div class="statsRow">
+        <div class="stat">
+          <span class="label">現金</span>
+          <span class="value" id="cashLabel">10,000</span>
+        </div>
+        <div class="stat">
+          <span class="label">持倉</span>
+          <span class="value" id="sharesLabel">0</span>
+          <span class="sub" id="avgCostLabel"></span>
+        </div>
+        <div class="stat highlight">
+          <span class="label">總資產</span>
+          <span class="value" id="equityLabel">10,000</span>
+          <span class="sub" id="pnlLabel">+0.00%</span>
+        </div>
+      </div>
+      <div class="goalRow">
+        <div class="goalBar"><div id="goalProgress"></div></div>
+        <div class="goalText">
+          <span>目標</span>
+          <span id="goalPctLabel">0.00%</span>
+          <span>10,000,000</span>
+        </div>
+      </div>
+    </header>
 
-  <!-- 主遊戲容器 -->
-  <div id="game" class="hidden">
-    <canvas id="world"></canvas>
+    <section id="chartPanel">
+      <div class="priceRow">
+        <div class="priceMain">
+          <span class="priceVal" id="priceNow">100.00</span>
+          <span class="priceChange up" id="priceChange">+0.00 (+0.00%)</span>
+        </div>
+        <div class="legendRow">
+          <span class="legendDot ma5"></span>短線
+          <span class="legendDot ma20"></span>中線
+        </div>
+      </div>
+      <canvas id="priceChart"></canvas>
+      <div class="timeAxis" id="timeAxis"></div>
+    </section>
 
-    <!-- 頂部資源欄（v2.4：自製像素 icon） -->
-    <div id="topBar">
-      <div class="res" data-res="gold"><img class="ico" src="./assets/ui/icons/coin.png?v=33"  alt="金幣"><span class="val">0</span></div>
-      <div class="res" data-res="food"><img class="ico" src="./assets/ui/icons/wheat.png?v=33" alt="糧食"><span class="val">0</span></div>
+    <section id="subPanels">
+      <div class="subBox">
+        <div class="subHeader">
+          <span class="subTitle">成交量</span>
+          <span class="subVal numfont" id="volNowLabel">--</span>
+        </div>
+        <canvas id="volChart"></canvas>
+      </div>
+      <div class="subBox">
+        <div class="subHeader">
+          <span class="subTitle">籌碼分佈</span>
+          <span class="subVal numfont" id="chipMaxLabel"></span>
+        </div>
+        <canvas id="chipChart"></canvas>
+      </div>
+    </section>
 
-      <div id="milestone"></div>
+    <section id="gaugeRow">
+      <div class="gaugeBox">
+        <div class="gaugeTitle">熱度</div>
+        <canvas id="heatGauge"></canvas>
+        <div class="gaugeStatus" id="heatStatus">中性</div>
+      </div>
+      <div class="gaugeBox">
+        <div class="gaugeTitle">動能</div>
+        <canvas id="momentumGauge"></canvas>
+        <div class="gaugeStatus" id="momentumStatus">--</div>
+      </div>
+    </section>
 
-      <div class="spacer"></div>
+    <section id="tradePanel">
+      <div class="qtyRow">
+        <button class="qtyBtn" data-qty="10">10</button>
+        <button class="qtyBtn active" data-qty="100">100</button>
+        <button class="qtyBtn" data-qty="1000">1K</button>
+        <button class="qtyBtn" data-qty="max">全</button>
+        <input id="qtyInput" type="number" min="1" inputmode="numeric">
+      </div>
+      <div class="btnRow">
+        <button id="buyBtn" class="bigBtn buy">買 入</button>
+        <button id="sellBtn" class="bigBtn sell">賣 出</button>
+      </div>
+    </section>
 
-      <div id="dayInfo">
-        <span id="dayLabel">第 1 天</span>
-        <span id="timeLabel">早晨</span>
-        <button id="muteBtn" title="切換音樂">音</button>
-        <button id="speedBtn" title="切換遊戲速度">1x</button>
+    <section id="logPanel">
+      <div id="logArea"></div>
+    </section>
+
+    <div id="winScreen" class="hidden">
+      <div class="winInner">
+        <div class="winRibbon">CONGRATULATIONS</div>
+        <h1>達成 1000 萬</h1>
+        <p>用時 <span id="winTime"></span>，共 <span id="winTrades"></span> 筆交易</p>
+        <button id="restartBtn" class="bigBtn buy">再來一局</button>
       </div>
     </div>
 
-    <!-- 提示飄字層（由 JS 操作） -->
-    <div id="floaters"></div>
-
-    <!-- 右側狀態 / 詳情面板 -->
-    <aside id="sidePanel" class="hidden">
-      <button class="closeBtn" id="closeSide">✕</button>
-      <div id="sideContent"></div>
-    </aside>
-
-    <!-- 底部建造選單（v2.1：純文字） -->
-    <div id="bottomBar">
-      <button class="bigBtn" id="buildBtn">建造</button>
-    </div>
-
-    <!-- 建造選單彈窗 -->
-    <div id="buildMenu" class="modal hidden">
-      <div class="modal-inner">
-        <h2>選擇要建造的建築</h2>
-        <div id="buildList"></div>
-        <button class="closeBtn" data-close="buildMenu">✕</button>
-      </div>
-    </div>
-
-    <!-- v1.6：市場、玩法說明先拿掉，等系統再深些回來 -->
-
-    <!-- 建造擺放提示 -->
-    <div id="placementHint" class="hidden">
-      <span id="placementText">點空地擺放，ESC 取消</span>
-    </div>
-
-    <!-- 警告浮窗 -->
     <div id="toast" class="hidden"></div>
   </div>
-
-  <script src="./game.js?v=36"></script>
+  <script src="./game.js?v=2"></script>
 </body>
 </html>
