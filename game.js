@@ -1,61 +1,79 @@
 (() => {
 'use strict';
-const TICK_MS = 3_000;
-const SUBTICK_MS = 120;
+const TICK_MS = 1_000;             // 1 秒一筆 tick（K 線週期由 aggregation 決定）
+const SUBTICK_MS = 100;            // 100ms 子 tick 平滑
 const INITIAL_CASH = 10_000;
 const WIN_TARGET = 10_000_000;
-const VISIBLE_TICKS = 80;
-const TOTAL_HISTORY = 240;
-const DRIFT = 0.0008;
-const VOL = 0.018;
-const NEWS_PROB = 0.005;
-const CRASH_PROB = 0.001;
+const VISIBLE_CANDLES = 40;        // 顯示 40 根 K 棒
+const TOTAL_HISTORY = 1200;        // 保留 1200 tick (20 分鐘)
+const DRIFT = 0.0003;
+const VOL = 0.012;
+const NEWS_PROB = 0.003;
+const CRASH_PROB = 0.0006;
 const NEWS_TEXTS = {
   good:  ['利多消息 / 技術突破', '產品熱賣 / 看好', '財報超預期', '法人加碼', '政策利多'],
   bad:   ['利空消息 / 技術受挫', '對手推競品', '財報不如預期', '法人減碼', '行業逆風'],
   crash: ['黑天鵝 / 市場恐慌', '流動性危機', '系統性風險爆發'],
   surge: ['獨家利多 / 爆量', '法人狂買進場', '產業劇變利多']
 };
+
 const state = {
-  prices: [], basePrice: 100, tick: 0, trend: 0, trendTicks: 0,
-  startTime: Date.now(), cash: INITIAL_CASH, shares: 0, avgCost: 0,
-  trades: 0, won: false, qtyMode: '100', muted: false,
-  displayPrice: 100, flashUntil: 0, flashColor: null,
+  prices: [],                  // tick-level: {t, p, v}
+  basePrice: 100,
+  tick: 0, trend: 0, trendTicks: 0,
+  startTime: Date.now(),
+  cash: INITIAL_CASH, shares: 0, avgCost: 0,
+  trades: 0, won: false,
+  qtyMode: '100', muted: false,
+  displayPrice: 100, flashUntil: 0,
+
+  // v0.3 用戶設定
+  candlePeriod: 15,            // 秒 (5 / 15 / 30)
+  ma1Period: 5, ma1On: true,
+  ma2Period: 20, ma2On: true,
+  showVol: false,
+  showChip: false,
 };
+
 let bgm = null;
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
 const audioCtx = AudioCtx ? new AudioCtx() : null;
-function gauss() { let u = 0, v = 0; while (u === 0) u = Math.random(); while (v === 0) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
+function gauss() {
+  let u=0,v=0;
+  while(u===0)u=Math.random(); while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
 function nextPrice() {
   const last = state.prices.length ? state.prices[state.prices.length - 1].p : state.basePrice;
   let drift = DRIFT + state.trend;
   if (state.trendTicks > 0) { state.trendTicks--; if (state.trendTicks === 0) state.trend = 0; }
-  if (Math.random() < 0.01) { state.trend = (Math.random() - 0.5) * 0.004; state.trendTicks = 30 + Math.floor(Math.random() * 60); }
-  if (state.prices.length > 20) {
-    const recent = state.prices.slice(-20).map(p => p.p);
+  if (Math.random() < 0.005) { state.trend = (Math.random() - 0.5) * 0.0025; state.trendTicks = 60 + Math.floor(Math.random() * 120); }
+  if (state.prices.length > 60) {
+    const recent = state.prices.slice(-60).map(p => p.p);
     const hi = Math.max(...recent), lo = Math.min(...recent);
-    if (last >= hi * 0.99) drift -= 0.002;
-    if (last <= lo * 1.01) drift += 0.002;
+    if (last >= hi * 0.99) drift -= 0.0008;
+    if (last <= lo * 1.01) drift += 0.0008;
   }
   let r = drift + VOL * gauss();
   let eventTxt = null, eventKind = null;
   if (Math.random() < NEWS_PROB) {
-    if (Math.random() < 0.55) { r += 0.04 + Math.random() * 0.04; eventTxt = NEWS_TEXTS.good[Math.floor(Math.random() * NEWS_TEXTS.good.length)]; eventKind = 'good'; }
-    else { r -= 0.04 + Math.random() * 0.04; eventTxt = NEWS_TEXTS.bad[Math.floor(Math.random() * NEWS_TEXTS.bad.length)]; eventKind = 'bad'; }
+    if (Math.random() < 0.55) { r += 0.03 + Math.random() * 0.03; eventTxt = NEWS_TEXTS.good[Math.floor(Math.random()*NEWS_TEXTS.good.length)]; eventKind='good'; }
+    else { r -= 0.03 + Math.random() * 0.03; eventTxt = NEWS_TEXTS.bad[Math.floor(Math.random()*NEWS_TEXTS.bad.length)]; eventKind='bad'; }
   }
   if (Math.random() < CRASH_PROB) {
-    if (Math.random() < 0.5) { r -= 0.08 + Math.random() * 0.10; eventTxt = NEWS_TEXTS.crash[Math.floor(Math.random() * NEWS_TEXTS.crash.length)]; eventKind = 'crash'; }
-    else { r += 0.08 + Math.random() * 0.10; eventTxt = NEWS_TEXTS.surge[Math.floor(Math.random() * NEWS_TEXTS.surge.length)]; eventKind = 'surge'; }
+    if (Math.random() < 0.5) { r -= 0.06 + Math.random() * 0.08; eventTxt = NEWS_TEXTS.crash[Math.floor(Math.random()*NEWS_TEXTS.crash.length)]; eventKind='crash'; }
+    else { r += 0.06 + Math.random() * 0.08; eventTxt = NEWS_TEXTS.surge[Math.floor(Math.random()*NEWS_TEXTS.surge.length)]; eventKind='surge'; }
   }
   const p = Math.max(0.5, last * (1 + r));
-  const v = Math.round(500 + Math.random() * 1500 + Math.abs(r) * 80000);
+  const v = Math.round(500 + Math.random() * 1500 + Math.abs(r) * 60000);
   return { p, v, event: eventTxt, kind: eventKind };
 }
+
 function tick() {
   const next = nextPrice();
-  const high = next.p * (1 + Math.random() * 0.008);
-  const low = next.p * (1 - Math.random() * 0.008);
-  state.prices.push({ t: state.tick++, p: next.p, v: next.v, h: high, l: low });
+  state.prices.push({ t: state.tick++, p: next.p, v: next.v });
   if (state.prices.length > TOTAL_HISTORY) state.prices.shift();
   if (next.event) {
     log(`${next.event}`, 'news');
@@ -63,52 +81,63 @@ function tick() {
     else if (next.kind === 'surge') { playSfx('surge'); toast(next.event, 'surge'); }
     else { toast(next.event, 'news', 1500); }
   }
-  state.flashUntil = performance.now() + 500;
-  state.flashColor = next.p >= state.displayPrice ? 'up' : 'down';
+  state.flashUntil = performance.now() + 400;
   renderStats();
   checkWin();
 }
+
 function subtick() {
   if (state.prices.length === 0) return;
   const target = state.prices[state.prices.length - 1].p;
   const diff = target - state.displayPrice;
-  state.displayPrice += diff * 0.18;
-  state.displayPrice *= (1 + (Math.random() - 0.5) * 0.0008);
-  renderPriceLine();
-  renderGauges();
+  state.displayPrice += diff * 0.22;
+  state.displayPrice *= (1 + (Math.random() - 0.5) * 0.0006);
+  renderPriceArea();
 }
-const $ = (id) => document.getElementById(id);
-function maArray(period) {
-  const arr = new Array(state.prices.length);
-  for (let i = 0; i < state.prices.length; i++) {
+
+/* ============== K-LINE AGGREGATION ============== */
+function buildCandles(period) {
+  // period in seconds. tick is 1s so period = ticks per candle.
+  const ticksPerCandle = period;
+  const candles = [];
+  // 從末端往前 group
+  const data = state.prices;
+  // 對齊：最後一根可能未完成
+  let cur = null;
+  for (let i = 0; i < data.length; i++) {
+    const groupIdx = Math.floor(i / ticksPerCandle);
+    if (!cur || cur.gi !== groupIdx) {
+      if (cur) candles.push(cur);
+      cur = { gi: groupIdx, o: data[i].p, h: data[i].p, l: data[i].p, c: data[i].p, v: 0 };
+    }
+    if (data[i].p > cur.h) cur.h = data[i].p;
+    if (data[i].p < cur.l) cur.l = data[i].p;
+    cur.c = data[i].p;
+    cur.v += data[i].v;
+  }
+  if (cur) candles.push(cur);
+  return candles;
+}
+
+function maOnCandles(candles, period) {
+  const arr = new Array(candles.length);
+  for (let i = 0; i < candles.length; i++) {
     if (i + 1 < period) { arr[i] = null; continue; }
     let sum = 0;
-    for (let j = i + 1 - period; j <= i; j++) sum += state.prices[j].p;
+    for (let j = i + 1 - period; j <= i; j++) sum += candles[j].c;
     arr[i] = sum / period;
   }
   return arr;
 }
-function heatValue() {
-  const win = 14;
-  if (state.prices.length < win + 1) return 50;
-  const recent = state.prices.slice(-(win+1));
-  let gain = 0, loss = 0;
-  for (let i = 1; i < recent.length; i++) { const d = recent[i].p - recent[i-1].p; if (d > 0) gain += d; else loss -= d; }
-  if (gain + loss === 0) return 50;
-  const rs = gain / Math.max(0.0001, loss);
-  return 100 - 100 / (1 + rs);
-}
-function momentum() {
-  if (state.prices.length < 11) return 0;
-  const cur = state.prices[state.prices.length - 1].p;
-  const ago = state.prices[state.prices.length - 11].p;
-  return ((cur - ago) / ago) * 100;
-}
+
+const $ = (id) => document.getElementById(id);
+
 function fmt(n) {
   if (n >= 100_000_000) return (n/100_000_000).toFixed(2) + ' 億';
   if (n >= 10_000) return (n/10_000).toFixed(2) + ' 萬';
-  return Number(Math.round(n * 100) / 100).toLocaleString();
+  return Number(Math.round(n*100)/100).toLocaleString();
 }
+
 function renderStats() {
   if (!state.prices.length) return;
   const cur = state.prices[state.prices.length - 1].p;
@@ -131,15 +160,18 @@ function renderStats() {
   const chgEl = $('priceChange');
   chgEl.textContent = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)} (${chg >= 0 ? '+' : ''}${chgPct.toFixed(2)}%)`;
   chgEl.className = 'priceChange ' + (chg >= 0 ? 'up' : 'down');
-  $('volNowLabel').textContent = state.prices[state.prices.length-1].v.toLocaleString();
+  if (state.showVol) $('volNowLabel').textContent = state.prices[state.prices.length-1].v.toLocaleString();
   renderTimeAxis();
 }
-function renderPriceLine() {
+
+function renderPriceArea() {
   if (!state.prices.length) return;
   $('priceNow').textContent = state.displayPrice.toFixed(2);
-  drawPriceChart(); drawVolChart(); drawChipChart();
+  drawCandleChart();
+  if (state.showVol) drawVolChart();
+  if (state.showChip) drawChipChart();
 }
-function renderGauges() { drawHeatGauge(); drawMomentumGauge(); }
+
 function setCanvas(c) {
   const dpr = window.devicePixelRatio || 1;
   const W = c.clientWidth, H = c.clientHeight;
@@ -149,31 +181,49 @@ function setCanvas(c) {
   ctx.clearRect(0, 0, W, H);
   return { ctx, W, H };
 }
+
 function renderTimeAxis() {
   const el = $('timeAxis');
   const now = new Date();
+  const period = state.candlePeriod;
   const labels = [];
   for (let i = 4; i >= 0; i--) {
-    const t = new Date(now.getTime() - i * 60_000);
-    labels.push(`${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`);
+    const sec = i * VISIBLE_CANDLES * period / 4;
+    const t = new Date(now.getTime() - sec * 1000);
+    labels.push(`${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`);
   }
   el.innerHTML = labels.map(l => `<span>${l}</span>`).join('');
 }
-function drawPriceChart() {
+
+/* ============== Candle Chart ============== */
+function drawCandleChart() {
   const c = $('priceChart');
   const { ctx, W, H } = setCanvas(c);
-  const data = state.prices.slice(-VISIBLE_TICKS);
-  if (data.length < 2) return;
-  const prices = data.map((d, i) => i === data.length - 1 ? state.displayPrice : d.p);
-  const highs = data.map(d => d.h || d.p);
-  const lows = data.map(d => d.l || d.p);
-  const lo = Math.min(...lows) * 0.998;
-  const hi = Math.max(...highs) * 1.002;
+
+  const allCandles = buildCandles(state.candlePeriod);
+  const candles = allCandles.slice(-VISIBLE_CANDLES);
+  if (candles.length < 1) return;
+
+  // 用 displayPrice 平滑替換最後一根 K 的 close（讓最新 K 跟著動）
+  const lastIdx = candles.length - 1;
+  const tweenedCandle = { ...candles[lastIdx], c: state.displayPrice };
+  // 也讓最後一根的 high/low 至少包住 displayPrice
+  tweenedCandle.h = Math.max(tweenedCandle.h, state.displayPrice);
+  tweenedCandle.l = Math.min(tweenedCandle.l, state.displayPrice);
+  candles[lastIdx] = tweenedCandle;
+
+  // 計算可視範圍
+  const lo = Math.min(...candles.map(k => k.l)) * 0.998;
+  const hi = Math.max(...candles.map(k => k.h)) * 1.002;
+
   const padR = 50;
   const chartW = W - padR;
-  const xStep = chartW / (data.length - 1);
-  const px = (i) => i * xStep;
+  const candleW = chartW / candles.length;
+  const bodyW = Math.max(2, candleW * 0.7);
+
   const py = (p) => 12 + (H - 24) * (1 - (p - lo) / (hi - lo));
+
+  // 網格
   ctx.strokeStyle = 'rgba(255,255,255,0.04)';
   ctx.lineWidth = 1;
   for (let g = 0; g <= 4; g++) {
@@ -185,6 +235,7 @@ function drawPriceChart() {
     const x = chartW * g / 4;
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
   }
+  // 價格刻度
   ctx.fillStyle = '#555c6e';
   ctx.font = '10px JetBrains Mono';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -193,45 +244,44 @@ function drawPriceChart() {
     const priceLabel = (hi - (hi - lo) * g / 4).toFixed(2);
     ctx.fillText(priceLabel, chartW + 4, y);
   }
-  const startP = prices[0], endP = prices[prices.length - 1];
-  const up = endP >= startP;
-  const lineColor = up ? '#26a69a' : '#ef5350';
-  const glowColor = up ? 'rgba(38,166,154,0.5)' : 'rgba(239,83,80,0.5)';
-  const fillGrad = ctx.createLinearGradient(0, 12, 0, H - 12);
-  fillGrad.addColorStop(0, up ? 'rgba(38,166,154,0.20)' : 'rgba(239,83,80,0.20)');
-  fillGrad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = fillGrad;
-  ctx.beginPath();
-  ctx.moveTo(px(0), py(prices[0]));
-  for (let i = 1; i < data.length; i++) ctx.lineTo(px(i), py(prices[i]));
-  ctx.lineTo(px(data.length - 1), H - 12);
-  ctx.lineTo(px(0), H - 12);
-  ctx.closePath(); ctx.fill();
-  ctx.shadowColor = glowColor; ctx.shadowBlur = 8;
-  ctx.strokeStyle = lineColor; ctx.lineWidth = 1.8; ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(px(0), py(prices[0]));
-  for (let i = 1; i < data.length; i++) ctx.lineTo(px(i), py(prices[i]));
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-  const ma5 = maArray(5).slice(-VISIBLE_TICKS);
-  ctx.strokeStyle = 'rgba(240, 185, 11, 0.85)'; ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  let started = false;
-  for (let i = 0; i < ma5.length; i++) {
-    if (ma5[i] == null) continue;
-    if (!started) { ctx.moveTo(px(i), py(ma5[i])); started = true; } else ctx.lineTo(px(i), py(ma5[i]));
+
+  // 畫 K 線（紅跌綠漲）
+  for (let i = 0; i < candles.length; i++) {
+    const k = candles[i];
+    const cx = (i + 0.5) * candleW;
+    const up = k.c >= k.o;
+    const color = up ? '#26a69a' : '#ef5350';
+
+    // 上下影線
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, py(k.h));
+    ctx.lineTo(cx, py(k.l));
+    ctx.stroke();
+
+    // 實體
+    const yTop = py(Math.max(k.o, k.c));
+    const yBot = py(Math.min(k.o, k.c));
+    const height = Math.max(1, yBot - yTop);
+    ctx.fillStyle = color;
+    ctx.fillRect(cx - bodyW/2, yTop, bodyW, height);
+    // 邊框
+    ctx.strokeStyle = color;
+    ctx.strokeRect(cx - bodyW/2 + 0.5, yTop + 0.5, bodyW, height);
   }
-  ctx.stroke();
-  const ma20 = maArray(20).slice(-VISIBLE_TICKS);
-  ctx.strokeStyle = 'rgba(41, 98, 255, 0.85)'; ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  started = false;
-  for (let i = 0; i < ma20.length; i++) {
-    if (ma20[i] == null) continue;
-    if (!started) { ctx.moveTo(px(i), py(ma20[i])); started = true; } else ctx.lineTo(px(i), py(ma20[i]));
+
+  // 均線
+  if (state.ma1On && state.ma1Period > 0) {
+    const ma = maOnCandles(candles, state.ma1Period);
+    drawMaLine(ctx, ma, candleW, py, '#f0b90b');
   }
-  ctx.stroke();
+  if (state.ma2On && state.ma2Period > 0) {
+    const ma = maOnCandles(candles, state.ma2Period);
+    drawMaLine(ctx, ma, candleW, py, '#2962ff');
+  }
+
+  // 平均成本線
   if (state.shares > 0 && state.avgCost >= lo && state.avgCost <= hi) {
     const y = py(state.avgCost);
     ctx.strokeStyle = 'rgba(240, 185, 11, 0.4)';
@@ -244,40 +294,51 @@ function drawPriceChart() {
     ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
     ctx.fillText('成本 ' + state.avgCost.toFixed(2), 4, y - 2);
   }
-  const curY = py(endP);
-  ctx.fillStyle = lineColor;
+
+  // 現價刻度框
+  const cur = state.displayPrice;
+  const curY = py(cur);
+  const last = candles[candles.length - 1];
+  const curColor = (last && last.c >= last.o) ? '#26a69a' : '#ef5350';
+  ctx.fillStyle = curColor;
   ctx.fillRect(chartW, curY - 8, padR - 2, 16);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 11px JetBrains Mono';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(state.displayPrice.toFixed(2), chartW + (padR - 2) / 2, curY);
-  const flash = performance.now() < state.flashUntil;
-  const dotR = flash ? 6 : 4;
-  ctx.shadowColor = glowColor; ctx.shadowBlur = flash ? 16 : 10;
-  ctx.fillStyle = lineColor;
-  ctx.beginPath(); ctx.arc(px(data.length - 1), curY, dotR, 0, Math.PI * 2); ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(px(data.length - 1), curY, 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillText(cur.toFixed(2), chartW + (padR - 2) / 2, curY);
 }
+
+function drawMaLine(ctx, arr, candleW, py, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] == null) continue;
+    const x = (i + 0.5) * candleW;
+    const y = py(arr[i]);
+    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
 function drawVolChart() {
   const c = $('volChart');
   const { ctx, W, H } = setCanvas(c);
-  const data = state.prices.slice(-60);
-  if (data.length < 2) return;
-  const vols = data.map(d => d.v);
-  const maxV = Math.max(...vols, 1);
-  const xStep = W / data.length;
-  const bw = Math.max(1, xStep - 1);
-  for (let i = 0; i < data.length; i++) {
-    const v = data[i].v;
-    const h = (v / maxV) * (H - 2);
-    const prev = i > 0 ? data[i-1].p : data[i].p;
-    const up = data[i].p >= prev;
-    ctx.fillStyle = up ? 'rgba(38, 166, 154, 0.55)' : 'rgba(239, 83, 80, 0.55)';
-    ctx.fillRect(i * xStep, H - h - 1, bw, h);
+  const candles = buildCandles(state.candlePeriod).slice(-VISIBLE_CANDLES);
+  if (candles.length < 2) return;
+  const maxV = Math.max(...candles.map(k => k.v), 1);
+  const cw = W / candles.length;
+  const bw = Math.max(1, cw * 0.7);
+  for (let i = 0; i < candles.length; i++) {
+    const k = candles[i];
+    const h = (k.v / maxV) * (H - 2);
+    const up = k.c >= k.o;
+    ctx.fillStyle = up ? 'rgba(38,166,154,0.55)' : 'rgba(239,83,80,0.55)';
+    ctx.fillRect(i * cw + (cw - bw)/2, H - h - 1, bw, h);
   }
 }
+
 function drawChipChart() {
   const c = $('chipChart');
   const { ctx, W, H } = setCanvas(c);
@@ -295,13 +356,12 @@ function drawChipChart() {
   }
   const maxB = Math.max(...buckets, 1);
   const yStep = H / bins;
-  const padR = 2;
   for (let b = 0; b < bins; b++) {
-    const w = (buckets[b] / maxB) * (W - padR);
+    const w = (buckets[b] / maxB) * (W - 2);
     const y = H - (b + 1) * yStep + 0.5;
     const grad = ctx.createLinearGradient(0, y, w, y);
-    grad.addColorStop(0, 'rgba(41, 98, 255, 0.55)');
-    grad.addColorStop(1, 'rgba(41, 98, 255, 0.15)');
+    grad.addColorStop(0, 'rgba(41,98,255,0.55)');
+    grad.addColorStop(1, 'rgba(41,98,255,0.15)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, y, w, yStep - 1);
   }
@@ -309,76 +369,14 @@ function drawChipChart() {
   if (cur >= lo && cur <= hi) {
     const curBin = (cur - lo) / (hi - lo) * bins;
     const curY = H - curBin * yStep;
-    ctx.strokeStyle = '#f0b90b'; ctx.lineWidth = 1;
-    ctx.setLineDash([2, 2]);
+    ctx.strokeStyle = '#f0b90b'; ctx.lineWidth = 1; ctx.setLineDash([2,2]);
     ctx.beginPath(); ctx.moveTo(0, curY); ctx.lineTo(W, curY); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = '#f0b90b';
-    ctx.font = '9px JetBrains Mono';
-    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    ctx.fillText(cur.toFixed(2), W - 2, curY - 5);
   }
 }
-function drawArcGauge(c, value, opts) {
-  const { ctx, W, H } = setCanvas(c);
-  const cx = W / 2;
-  const cy = H * 0.92;
-  const r = Math.min(W * 0.42, H * 0.85);
-  const startA = Math.PI;
-  const endA = 0;
-  ctx.lineWidth = 6;
-  ctx.lineCap = 'round';
-  for (let i = 0; i < 3; i++) {
-    const a1 = startA + (endA - startA) * i / 3;
-    const a2 = startA + (endA - startA) * (i + 1) / 3;
-    ctx.strokeStyle = opts.bands[i];
-    ctx.beginPath(); ctx.arc(cx, cy, r, a1, a2); ctx.stroke();
-  }
-  const pct = Math.max(0, Math.min(100, value)) / 100;
-  const needleA = startA + (endA - startA) * pct;
-  ctx.strokeStyle = opts.activeColor; ctx.lineWidth = 4;
-  ctx.shadowColor = opts.activeColor; ctx.shadowBlur = 8;
-  ctx.beginPath(); ctx.arc(cx, cy, r, startA, needleA); ctx.stroke();
-  ctx.shadowBlur = 0;
-  const nx = cx + Math.cos(needleA) * (r - 6);
-  const ny = cy + Math.sin(needleA) * (r - 6);
-  ctx.strokeStyle = '#d1d4dc'; ctx.lineWidth = 2; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny); ctx.stroke();
-  ctx.fillStyle = '#d1d4dc';
-  ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = opts.activeColor;
-  ctx.font = 'bold 13px JetBrains Mono';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(opts.label, cx, cy - r * 0.45);
-}
-function drawHeatGauge() {
-  const heat = heatValue();
-  drawArcGauge($('heatGauge'), heat, {
-    bands: ['rgba(41,98,255,0.25)', 'rgba(240,185,11,0.25)', 'rgba(239,83,80,0.25)'],
-    activeColor: heat > 70 ? '#ef5350' : heat < 30 ? '#2962ff' : '#f0b90b',
-    label: Math.round(heat).toString(),
-  });
-  const el = $('heatStatus');
-  if (heat > 70) { el.textContent = '過熱'; el.style.color = '#ef5350'; }
-  else if (heat < 30) { el.textContent = '冷清'; el.style.color = '#2962ff'; }
-  else { el.textContent = '中性'; el.style.color = '#8b95a8'; }
-}
-function drawMomentumGauge() {
-  const m = momentum();
-  const v = Math.max(0, Math.min(100, (m + 5) / 10 * 100));
-  drawArcGauge($('momentumGauge'), v, {
-    bands: ['rgba(239,83,80,0.25)', 'rgba(139,149,168,0.25)', 'rgba(38,166,154,0.25)'],
-    activeColor: m > 0.5 ? '#26a69a' : m < -0.5 ? '#ef5350' : '#8b95a8',
-    label: (m >= 0 ? '+' : '') + m.toFixed(2) + '%',
-  });
-  const el = $('momentumStatus');
-  if (m > 1) { el.textContent = '強多'; el.style.color = '#26a69a'; }
-  else if (m > 0.2) { el.textContent = '偏多'; el.style.color = '#26a69a'; }
-  else if (m < -1) { el.textContent = '強空'; el.style.color = '#ef5350'; }
-  else if (m < -0.2) { el.textContent = '偏空'; el.style.color = '#ef5350'; }
-  else { el.textContent = '盤整'; el.style.color = '#8b95a8'; }
-}
-function currentPrice() { return state.prices.length ? state.prices[state.prices.length - 1].p : state.basePrice; }
+
+/* ============== Trade ============== */
+function currentPrice() { return state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice; }
 function getQty() {
   const mode = state.qtyMode;
   const p = currentPrice();
@@ -403,9 +401,8 @@ function sell() {
   const p = currentPrice();
   let qty = state.qtyMode === 'max' ? state.shares : Math.min(state.shares, getQty());
   if (qty <= 0) return;
-  const proceeds = p * qty;
   const profit = (p - state.avgCost) * qty;
-  state.cash += proceeds;
+  state.cash += p * qty;
   state.shares -= qty;
   if (state.shares === 0) state.avgCost = 0;
   state.trades++;
@@ -429,6 +426,8 @@ function toast(msg, cls = '', dur = 2400) {
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.add('hidden'), dur);
 }
+
+/* ============== SFX ============== */
 function playSfx(kind) {
   if (state.muted || !audioCtx) return;
   const now = audioCtx.currentTime;
@@ -438,7 +437,7 @@ function playSfx(kind) {
   else if (kind === 'surge') { [880, 1100, 1320].forEach((f, i) => beep(f, 0.08, now + i*0.07, 0.25)); }
   else if (kind === 'win') { [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.2, now + i*0.13, 0.35)); }
 }
-function beep(freq, dur, startAt, gain, type = 'square') {
+function beep(freq, dur, startAt, gain, type='square') {
   const o = audioCtx.createOscillator();
   const g = audioCtx.createGain();
   o.type = type;
@@ -448,6 +447,7 @@ function beep(freq, dur, startAt, gain, type = 'square') {
   o.connect(g).connect(audioCtx.destination);
   o.start(startAt); o.stop(startAt + dur + 0.05);
 }
+
 function setupBGM() {
   bgm = new Audio('./assets/audio/bgm.mp3');
   bgm.loop = true; bgm.volume = 0.22;
@@ -480,15 +480,52 @@ function checkWin() {
     playSfx('win');
   }
 }
+
+/* ============== Indicator Drawer ============== */
+function toggleDrawer() {
+  const drawer = $('indicatorDrawer');
+  const btn = $('indicatorBtn');
+  const isHidden = drawer.classList.contains('hidden');
+  if (isHidden) {
+    drawer.classList.remove('hidden');
+    btn.classList.add('active');
+  } else {
+    drawer.classList.add('hidden');
+    btn.classList.remove('active');
+  }
+}
+function updateMaLabels() {
+  $('ma1Label').textContent = state.ma1On ? `MA ${state.ma1Period}` : '';
+  $('ma2Label').textContent = state.ma2On ? `MA ${state.ma2Period}` : '';
+  $('maLegend').style.opacity = (state.ma1On || state.ma2On) ? '1' : '0.3';
+}
+function updateSubPanels() {
+  const wantSub = state.showVol || state.showChip;
+  $('subPanels').classList.toggle('hidden', !wantSub);
+  $('volBox').classList.toggle('hidden', !state.showVol);
+  $('chipBox').classList.toggle('hidden', !state.showChip);
+  if (!state.showVol && !state.showChip) return;
+  // 動態 grid
+  if (state.showVol && state.showChip) {
+    $('subPanels').style.gridTemplateColumns = '1fr 1fr';
+  } else {
+    $('subPanels').style.gridTemplateColumns = '1fr';
+  }
+  renderPriceArea();
+}
+
 function init() {
-  state.prices = [{ t: 0, p: state.basePrice, v: 1000, h: state.basePrice, l: state.basePrice }];
-  for (let i = 1; i < 40; i++) {
+  // 預先 40 tick 暖場 (~40 秒史)
+  state.prices = [{ t: 0, p: state.basePrice, v: 1000 }];
+  for (let i = 1; i < 60; i++) {
     state.tick = i;
     const next = nextPrice();
-    state.prices.push({ t: i, p: next.p, v: next.v, h: next.p * (1 + Math.random() * 0.008), l: next.p * (1 - Math.random() * 0.008) });
+    state.prices.push({ t: i, p: next.p, v: next.v });
   }
   state.tick = state.prices.length;
   state.displayPrice = state.prices[state.prices.length - 1].p;
+
+  // qty btn
   document.querySelectorAll('.qtyBtn').forEach(btn => {
     btn.onclick = () => {
       state.qtyMode = btn.dataset.qty;
@@ -497,26 +534,66 @@ function init() {
       if (state.qtyMode !== 'max') $('qtyInput').value = state.qtyMode;
     };
   });
+  $('qtyInput').value = '100';
   $('qtyInput').addEventListener('focus', () => {
     document.querySelectorAll('.qtyBtn').forEach(b => b.classList.remove('active'));
     state.qtyMode = $('qtyInput').value;
   });
   $('qtyInput').addEventListener('input', () => { state.qtyMode = $('qtyInput').value; });
-  $('qtyInput').value = '100';
+
+  // period btn
+  document.querySelectorAll('.periodBtn').forEach(btn => {
+    btn.onclick = () => {
+      state.candlePeriod = parseInt(btn.dataset.period, 10);
+      document.querySelectorAll('.periodBtn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderPriceArea(); renderStats();
+    };
+  });
+
+  // ma inputs
+  const onMa1Change = () => {
+    const v = parseInt($('ma1Input').value, 10);
+    if (!isNaN(v) && v > 0) state.ma1Period = v;
+    state.ma1On = $('ma1Toggle').checked;
+    updateMaLabels(); renderPriceArea();
+  };
+  const onMa2Change = () => {
+    const v = parseInt($('ma2Input').value, 10);
+    if (!isNaN(v) && v > 0) state.ma2Period = v;
+    state.ma2On = $('ma2Toggle').checked;
+    updateMaLabels(); renderPriceArea();
+  };
+  $('ma1Input').addEventListener('input', onMa1Change);
+  $('ma1Toggle').addEventListener('change', onMa1Change);
+  $('ma2Input').addEventListener('input', onMa2Change);
+  $('ma2Toggle').addEventListener('change', onMa2Change);
+
+  // sub toggle
+  $('volToggle').addEventListener('change', () => { state.showVol = $('volToggle').checked; updateSubPanels(); });
+  $('chipToggle').addEventListener('change', () => { state.showChip = $('chipToggle').checked; updateSubPanels(); });
+
+  // misc
   $('buyBtn').onclick = buy;
   $('sellBtn').onclick = sell;
   $('muteBtn').onclick = toggleMute;
+  $('indicatorBtn').onclick = toggleDrawer;
   $('restartBtn').onclick = () => location.reload();
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
     if (e.key === 'b' || e.key === 'B') buy();
     if (e.key === 's' || e.key === 'S') sell();
   });
+
   setupBGM();
-  renderStats(); renderPriceLine(); renderGauges();
+  updateMaLabels();
+  renderStats();
+  renderPriceArea();
+
   setInterval(tick, TICK_MS);
   setInterval(subtick, SUBTICK_MS);
-  window.addEventListener('resize', () => { renderPriceLine(); renderGauges(); });
+  window.addEventListener('resize', () => { renderPriceArea(); });
 }
+
 window.addEventListener('DOMContentLoaded', init);
 })();

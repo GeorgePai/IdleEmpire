@@ -8,18 +8,19 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=2">
+<link rel="stylesheet" href="./style.css?v=3">
 </head>
 <body>
   <div id="app">
     <header id="topBar">
       <div class="brandRow">
         <div class="brand">
-          <span class="brandSymbol">IDX</span>
-          <span class="brandName">幻象指數</span>
+          <span class="brandSymbol">EPC</span>
+          <span class="brandName">Empire 虛擬貨幣</span>
           <span class="dot live"></span>
         </div>
         <div class="topActions">
+          <button id="indicatorBtn" title="指標選單">指標</button>
           <button id="muteBtn" title="切換音樂">♪</button>
         </div>
       </div>
@@ -49,48 +50,81 @@
       </div>
     </header>
 
+    <section id="indicatorDrawer" class="hidden">
+      <div class="drawerRow">
+        <div class="drawerLabel">K 線週期</div>
+        <div class="drawerControls">
+          <button class="periodBtn" data-period="5">5 秒</button>
+          <button class="periodBtn active" data-period="15">15 秒</button>
+          <button class="periodBtn" data-period="30">30 秒</button>
+        </div>
+      </div>
+      <div class="drawerRow">
+        <div class="drawerLabel">均線 1</div>
+        <div class="drawerControls">
+          <input type="number" id="ma1Input" min="1" max="200" value="5" class="maInput">
+          <span class="maColorDot ma1Color"></span>
+          <label class="switch">
+            <input type="checkbox" id="ma1Toggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="drawerRow">
+        <div class="drawerLabel">均線 2</div>
+        <div class="drawerControls">
+          <input type="number" id="ma2Input" min="1" max="200" value="20" class="maInput">
+          <span class="maColorDot ma2Color"></span>
+          <label class="switch">
+            <input type="checkbox" id="ma2Toggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="drawerRow">
+        <div class="drawerLabel">副圖</div>
+        <div class="drawerControls">
+          <label class="checkbox">
+            <input type="checkbox" id="volToggle">
+            <span>成交量</span>
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="chipToggle">
+            <span>籌碼分佈</span>
+          </label>
+        </div>
+      </div>
+    </section>
+
     <section id="chartPanel">
       <div class="priceRow">
         <div class="priceMain">
           <span class="priceVal" id="priceNow">100.00</span>
           <span class="priceChange up" id="priceChange">+0.00 (+0.00%)</span>
         </div>
-        <div class="legendRow">
-          <span class="legendDot ma5"></span>短線
-          <span class="legendDot ma20"></span>中線
+        <div class="legendRow" id="maLegend">
+          <span class="legendDot ma1Color"></span><span id="ma1Label">MA 5</span>
+          <span class="legendDot ma2Color"></span><span id="ma2Label">MA 20</span>
         </div>
       </div>
       <canvas id="priceChart"></canvas>
       <div class="timeAxis" id="timeAxis"></div>
     </section>
 
-    <section id="subPanels">
-      <div class="subBox">
+    <section id="subPanels" class="hidden">
+      <div class="subBox" id="volBox">
         <div class="subHeader">
           <span class="subTitle">成交量</span>
           <span class="subVal numfont" id="volNowLabel">--</span>
         </div>
         <canvas id="volChart"></canvas>
       </div>
-      <div class="subBox">
+      <div class="subBox" id="chipBox">
         <div class="subHeader">
           <span class="subTitle">籌碼分佈</span>
           <span class="subVal numfont" id="chipMaxLabel"></span>
         </div>
         <canvas id="chipChart"></canvas>
-      </div>
-    </section>
-
-    <section id="gaugeRow">
-      <div class="gaugeBox">
-        <div class="gaugeTitle">熱度</div>
-        <canvas id="heatGauge"></canvas>
-        <div class="gaugeStatus" id="heatStatus">中性</div>
-      </div>
-      <div class="gaugeBox">
-        <div class="gaugeTitle">動能</div>
-        <canvas id="momentumGauge"></canvas>
-        <div class="gaugeStatus" id="momentumStatus">--</div>
       </div>
     </section>
 
@@ -123,6 +157,6 @@
 
     <div id="toast" class="hidden"></div>
   </div>
-  <script src="./game.js?v=2"></script>
+  <script src="./game.js?v=3"></script>
 </body>
 </html>
