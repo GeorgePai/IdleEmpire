@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=3">
+<link rel="stylesheet" href="./style.css?v=4">
 </head>
 <body>
   <div id="app">
@@ -24,28 +24,48 @@
           <button id="muteBtn" title="切換音樂">♪</button>
         </div>
       </div>
-      <div class="statsRow">
-        <div class="stat">
-          <span class="label">現金</span>
-          <span class="value" id="cashLabel">10,000</span>
+
+      <!-- 倉位資訊面板 v0.4 重新設計 -->
+      <div id="positionPanel">
+        <div class="posRow posMain">
+          <div class="posLeft">
+            <div class="posLabel">即時價</div>
+            <div class="posValue priceVal" id="priceNow">100.00</div>
+            <div class="posTick" id="priceChange">+0.00 (+0.00%)</div>
+          </div>
+          <div class="posDivider"></div>
+          <div class="posRight">
+            <div class="posLabel">未實現損益</div>
+            <div class="posPnl" id="pnlPct">+0.00%</div>
+            <div class="posTick" id="pnlAmount">+0.00</div>
+          </div>
         </div>
-        <div class="stat">
-          <span class="label">持倉</span>
-          <span class="value" id="sharesLabel">0</span>
-          <span class="sub" id="avgCostLabel"></span>
-        </div>
-        <div class="stat highlight">
-          <span class="label">總資產</span>
-          <span class="value" id="equityLabel">10,000</span>
-          <span class="sub" id="pnlLabel">+0.00%</span>
+        <div class="posRow posSub">
+          <div class="posItem">
+            <span class="posKey">現金</span>
+            <span class="posVal" id="cashLabel">10,000</span>
+          </div>
+          <div class="posItem">
+            <span class="posKey">持倉</span>
+            <span class="posVal" id="sharesLabel">0</span>
+          </div>
+          <div class="posItem">
+            <span class="posKey">成本</span>
+            <span class="posVal" id="avgCostLabel">--</span>
+          </div>
+          <div class="posItem highlight">
+            <span class="posKey">總資產</span>
+            <span class="posVal" id="equityLabel">10,000</span>
+          </div>
         </div>
       </div>
+
       <div class="goalRow">
         <div class="goalBar"><div id="goalProgress"></div></div>
         <div class="goalText">
           <span>目標</span>
-          <span id="goalPctLabel">0.00%</span>
-          <span>10,000,000</span>
+          <span id="goalPctLabel">20.00%</span>
+          <span>50,000</span>
         </div>
       </div>
     </header>
@@ -94,18 +114,19 @@
           </label>
         </div>
       </div>
+      <div class="drawerRow">
+        <div class="drawerLabel">提示</div>
+        <div class="drawerControls drawerHint">圖表左右滑動看歷史、上下滑動調縮放</div>
+      </div>
     </section>
 
     <section id="chartPanel">
-      <div class="priceRow">
-        <div class="priceMain">
-          <span class="priceVal" id="priceNow">100.00</span>
-          <span class="priceChange up" id="priceChange">+0.00 (+0.00%)</span>
-        </div>
+      <div class="chartHeader">
         <div class="legendRow" id="maLegend">
           <span class="legendDot ma1Color"></span><span id="ma1Label">MA 5</span>
           <span class="legendDot ma2Color"></span><span id="ma2Label">MA 20</span>
         </div>
+        <button id="resetViewBtn" class="resetBtn hidden">回到最新</button>
       </div>
       <canvas id="priceChart"></canvas>
       <div class="timeAxis" id="timeAxis"></div>
@@ -149,7 +170,7 @@
     <div id="winScreen" class="hidden">
       <div class="winInner">
         <div class="winRibbon">CONGRATULATIONS</div>
-        <h1>達成 1000 萬</h1>
+        <h1>達成 5 萬</h1>
         <p>用時 <span id="winTime"></span>，共 <span id="winTrades"></span> 筆交易</p>
         <button id="restartBtn" class="bigBtn buy">再來一局</button>
       </div>
@@ -157,6 +178,6 @@
 
     <div id="toast" class="hidden"></div>
   </div>
-  <script src="./game.js?v=3"></script>
+  <script src="./game.js?v=4"></script>
 </body>
 </html>
