@@ -1,22 +1,75 @@
 (() => {
 'use strict';
+/* ============================================================
+   EMPIRE INDEX v0.6 — PULSE BUILD
+   時間單位設計：5 真實秒 = 1 PULSE (遊戲日)
+   ============================================================ */
 const TICK_MS = 1_000;
-const SUBTICK_MS = 60;                  // v0.5 圖表更高 framerate
+const SUBTICK_MS = 60;
 const PANEL_UPDATE_MS = 2500;
 const INITIAL_CASH = 10_000;
 const WIN_TARGET = 50_000;
 const VISIBLE_CANDLES_BASE = 40;
-const TOTAL_HISTORY = 1800;             // v0.5 加長，因為預設 5s 週期更耗資料
+const TOTAL_HISTORY = 1800;
 const DRIFT = 0.0004;
 const VOL = 0.014;
-const NEWS_PROB = 0.003;
-const CRASH_PROB = 0.0006;
-const NEWS_TEXTS = {
-  good: ['財報亮眼','分析師看好','利多襲來','大戶吸籌','機構買超','政策利多','業績爆衝'],
-  bad:  ['獲利警報','大戶倒貨','解禁賣壓','法人賣超','政策利空','需求疲軟','機構出貨'],
-  surge:['漲停鎖死！','資金狂潮！','急拉飆漲！','利多突襲！'],
-  crash:['黑天鵝！','閃崩中…','跌停封死！','恐慌賣壓！'],
-};
+const NEWS_PROB = 0.012;        // 普通即時新聞
+const FORECAST_PROB = 0.008;    // 預告事件
+const FORECAST_MIN_LEAD = 5;    // 提前 5 Pulse 預告
+const FORECAST_MAX_LEAD = 18;   // 最多 18 Pulse
+const PULSE_PER_TICK = 0.2;     // 1 tick = 0.2 pulse → 5 ticks = 1 pulse
+
+/* ============== 新聞庫：10 利多 + 10 利空 ============== */
+const NEWS_GOOD = [
+  '機構買家連續吸籌，鏈上巨鯨地址增加 18%',
+  'Empire DAO 通過治理提案，代幣銷毀啟動',
+  'Vela 央行降息 0.5%，市場流動性提升',
+  '主流交易所宣布 EPC 零手續費活動',
+  'Layer-2 主網升級完成，TPS 提升 10 倍',
+  '監管機構正式核准 EPC 現貨 ETF 上市',
+  'Sora 鏈日活突破歷史新高，創 240 萬地址',
+  'Phantom Capital 公開五億美元做多倉位',
+  '跨鏈橋資金流入連續 7 Pulse 創新高',
+  '機構支付方案上線，EPC 接入百萬商戶',
+];
+const NEWS_BAD = [
+  '監管機構展開反洗錢調查，多家交易所配合',
+  '巨鯨地址連續減倉，鏈上資金外流加速',
+  'Vela 央行緊急升息 0.75%，市場流動性收緊',
+  '主要交易所暫停 EPC 提現，社群恐慌升溫',
+  'Sora 鏈遭遇駭客攻擊，損失估計 8000 萬',
+  '監管草案禁止零售投資人持有 EPC',
+  'Phantom Capital 拋售 70% 持倉，引發踩踏',
+  '法人連續 5 Pulse 減倉，做空訂單激增 200%',
+  '穩定幣脫鉤事件波及，市場連鎖賣壓',
+  '日活地址跌至 60 Pulse 新低，鏈上活躍度疲弱',
+];
+
+/* ============== 預告事件庫 ============== */
+const FORECAST_GOOD = [
+  { text: 'Empire DAO 將公布主網升級結果',          impact: '預期：成功則市場樂觀'    },
+  { text: 'Vela 央行召開貨幣政策會議',                impact: '預期：降息可能'           },
+  { text: '機構 ETF 申請審查截止',                    impact: '預期：核准利多'           },
+  { text: '主流交易所將上線新交易對',                  impact: '預期：流動性提升'         },
+  { text: 'Layer-2 主網切換窗口',                     impact: '預期：技術利多'           },
+  { text: '機構財報日，預期亮眼',                      impact: '預期：盈餘驚喜'           },
+  { text: '半年度代幣銷毀執行',                        impact: '預期：通縮利多'           },
+  { text: '監管框架草案公布',                          impact: '預期：合規利多'           },
+  { text: 'Empire 鏈生態大會，重磅嘉賓出席',          impact: '預期：消息利多'           },
+  { text: '社群提案投票結果公布',                      impact: '預期：通過可能性高'       },
+];
+const FORECAST_BAD = [
+  { text: '監管聽證會召開，議題敏感',                  impact: '預期：政策利空'           },
+  { text: '大量代幣解禁釋出',                          impact: '預期：賣壓增加'           },
+  { text: 'Vela 央行升息會議',                          impact: '預期：流動性收緊'         },
+  { text: '主要法人鎖倉期屆滿',                        impact: '預期：減倉壓力'           },
+  { text: '稅務改革草案二讀',                          impact: '預期：報稅利空'           },
+  { text: '反洗錢調查中期報告',                        impact: '預期：監管利空'           },
+  { text: '宏觀數據公布日，市場敏感',                   impact: '預期：波動加大'           },
+  { text: '主要交易所合規審查截止',                    impact: '預期：可能下架部分代幣'   },
+  { text: '做空機構公布研究報告',                      impact: '預期：估值質疑'           },
+  { text: '司法部訴訟結果宣判日',                      impact: '預期：壞消息可能'         },
+];
 
 const state = {
   prices: [],
@@ -27,26 +80,38 @@ const state = {
   qtyMode: '100', muted: false,
   displayPrice: 100, flashUntil: 0,
 
-  candlePeriod: 5,                       // v0.5 預設 5s
+  candlePeriod: 5,
   ma1Period: 5, ma1On: true,
   ma2Period: 20, ma2On: true,
-  showVol: false, showChip: false,
+  showVol: false,
 
-  // 互動
   viewOffset: 0,
   yScaleMult: 1,
 
-  // 跳動式面板更新
   lastPanelUpdate: 0,
   shownPrice: 100,
 
-  // v0.5 掛單系統
-  tradingMode: 'market',                 // 'market' | 'limit'
-  pendingOrders: [],                     // [{id, side, qty, price, ts}]
-  executedHistory: [],                   // [{id, side, qty, price, ts, profit}]
+  tradingMode: 'market',
+  pendingOrders: [],
+  executedHistory: [],
   realizedPnl: 0,
   nextOrderId: 1,
+
+  // 預告事件
+  upcomingEvents: [],   // [{id, announcedPulse, executePulse, type, text, impact}]
+  pastEvents: [],       // 同上 + executed=true
+
+  // log
+  logEntries: { all: [], trade: [], news: [] },
+  logTab: 'all',
+  logExpanded: false,
+
+  started: false,       // splash 結束才開始
 };
+
+/* ============== Pulse 換算 ============== */
+function currentPulse() { return Math.floor(state.tick * PULSE_PER_TICK); }
+function pulseStr(p) { return 'PULSE ' + String(p).padStart(4, '0'); }
 
 let bgm = null;
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -58,7 +123,7 @@ function gauss() {
   while (v === 0) v = Math.random();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
-function nextPrice() {
+function nextPrice(suppressNews = false) {
   if (state.trendTicks > 0) { state.trendTicks--; if (state.trendTicks === 0) state.trend = 0; }
   else if (Math.random() < 0.01) {
     state.trend = (Math.random() < 0.5 ? -1 : 1) * (0.002 + Math.random()*0.005);
@@ -68,17 +133,12 @@ function nextPrice() {
   let mu = DRIFT + state.trend;
   let sig = VOL;
   let event = null, kind = null;
-  if (Math.random() < CRASH_PROB) {
-    const r = Math.random();
-    if (r < 0.5) { mu = -0.08 - Math.random()*0.05; sig = 0.03;
-      event = NEWS_TEXTS.crash[Math.floor(Math.random()*NEWS_TEXTS.crash.length)]; kind = 'crash'; }
-    else { mu = 0.08 + Math.random()*0.05; sig = 0.03;
-      event = NEWS_TEXTS.surge[Math.floor(Math.random()*NEWS_TEXTS.surge.length)]; kind = 'surge'; }
-  } else if (Math.random() < NEWS_PROB) {
+  if (!suppressNews && Math.random() < NEWS_PROB) {
     const good = Math.random() < 0.5;
-    mu += good ? 0.01 : -0.01;
-    event = good ? NEWS_TEXTS.good[Math.floor(Math.random()*NEWS_TEXTS.good.length)]
-                 : NEWS_TEXTS.bad[Math.floor(Math.random()*NEWS_TEXTS.bad.length)];
+    mu += good ? 0.015 : -0.015;
+    sig *= 1.5;
+    event = good ? NEWS_GOOD[Math.floor(Math.random()*NEWS_GOOD.length)]
+                 : NEWS_BAD[Math.floor(Math.random()*NEWS_BAD.length)];
     kind = good ? 'news+' : 'news-';
   }
   const shock = gauss() * sig;
@@ -87,22 +147,94 @@ function nextPrice() {
   return { p, v, event, kind };
 }
 
+/* 預告事件 — 觸發已預告的事件造成衝擊 */
+function triggerForecastEvent(ev) {
+  const last = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
+  let mu, sig = 0.025;
+  if (ev.type === 'good') { mu = 0.06 + Math.random()*0.04; }
+  else { mu = -0.06 - Math.random()*0.04; }
+  const shock = gauss() * sig;
+  const p = Math.max(0.5, last * Math.exp(mu + shock));
+  const v = Math.round(3000 + Math.random()*5000);
+  state.prices.push({ t: state.tick, p, v });
+  if (state.prices.length > TOTAL_HISTORY) state.prices.shift();
+  state.displayPrice = state.displayPrice * 0.5 + p * 0.5;
+
+  ev.executed = true;
+  ev.actualPulse = currentPulse();
+  state.pastEvents.unshift(ev);
+  if (state.pastEvents.length > 80) state.pastEvents.pop();
+
+  log(`【事件觸發】${ev.text}`, 'event', 'news');
+  toast(`${ev.type === 'good' ? '利多' : '利空'}觸發：${ev.text}`, ev.type === 'good' ? 'surge' : 'crash', 3200);
+  playSfx(ev.type === 'good' ? 'surge' : 'crash');
+}
+
+/* 隨機產生預告事件 */
+function maybeAnnounceForecast() {
+  if (Math.random() >= FORECAST_PROB) return;
+  // 同時上限 5 件
+  if (state.upcomingEvents.length >= 5) return;
+  const good = Math.random() < 0.5;
+  const pool = good ? FORECAST_GOOD : FORECAST_BAD;
+  const pick = pool[Math.floor(Math.random()*pool.length)];
+  const lead = FORECAST_MIN_LEAD + Math.floor(Math.random() * (FORECAST_MAX_LEAD - FORECAST_MIN_LEAD));
+  const ev = {
+    id: 'ev' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+    type: good ? 'good' : 'bad',
+    text: pick.text,
+    impact: pick.impact,
+    announcedPulse: currentPulse(),
+    executePulse: currentPulse() + lead,
+    executed: false,
+  };
+  state.upcomingEvents.push(ev);
+  log(`【預告】${lead} Pulse 後：${ev.text}`, 'event', 'news');
+  toast(`預告：${lead} Pulse 後 — ${ev.text}`, 'upcoming', 3200);
+  playSfx('news');
+}
+
 function tick() {
+  if (!state.started) return;
   state.tick++;
   const next = nextPrice();
   state.prices.push({ t: state.tick, p: next.p, v: next.v });
   if (state.prices.length > TOTAL_HISTORY) state.prices.shift();
   if (next.event) {
-    log(next.event, 'news');
-    if (next.kind === 'crash') { playSfx('crash'); toast(next.event, 'crash'); }
-    else if (next.kind === 'surge') { playSfx('surge'); toast(next.event, 'surge'); }
+    log(next.event, 'news', 'news');
+    if (next.kind === 'news+') toast(next.event, 'surge', 2400);
+    else toast(next.event, 'crash', 2400);
+    playSfx('news');
   }
-  // v0.5 掛單檢查（每次 tick 完價格後）
-  checkPendingOrders(next.p);
+
+  // 預告事件觸發
+  const pulse = currentPulse();
+  const stillUpcoming = [];
+  for (const ev of state.upcomingEvents) {
+    if (ev.executePulse <= pulse) {
+      triggerForecastEvent(ev);
+    } else {
+      stillUpcoming.push(ev);
+    }
+  }
+  state.upcomingEvents = stillUpcoming;
+
+  // 新預告
+  maybeAnnounceForecast();
+
+  // 限價單檢查
+  checkPendingOrders(state.prices[state.prices.length-1].p);
+
+  // 日曆按鈕指示
+  $('calendarBtn').classList.toggle('has-upcoming', state.upcomingEvents.length > 0);
+
+  // pulse 標籤
+  $('pulseLabel').textContent = pulseStr(pulse);
+
   checkWin();
 }
 
-/* ============== K-LINE AGGREGATION ============== */
+/* ============== K-LINE ============== */
 function buildCandles(period) {
   const ticksPerCandle = period;
   const groups = new Map();
@@ -118,8 +250,7 @@ function buildCandles(period) {
   }
   const sorted = [...groups.entries()].sort((a, b) => a[0] - b[0]);
   return sorted.map(([_, g]) => ({
-    ...g,
-    startTime: state.startTime + g.startTick * TICK_MS,
+    ...g, startPulse: Math.floor(g.startTick * PULSE_PER_TICK),
   }));
 }
 function maOnCandles(candles, period) {
@@ -133,12 +264,11 @@ function maOnCandles(candles, period) {
 
 const $ = (id) => document.getElementById(id);
 function fmt(n) {
-  if (n >= 1e6) return (n/1e6).toFixed(2) + 'M';
-  if (n >= 1e4) return (n/1e3).toFixed(1) + 'K';
+  if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1e4) return (n/1e3).toFixed(1) + 'K';
   return Math.round(n).toLocaleString();
 }
 
-/* ============== Position Panel ============== */
 function maybeUpdatePanel(force = false) {
   if (!state.prices.length) return;
   const now = performance.now();
@@ -163,27 +293,22 @@ function maybeUpdatePanel(force = false) {
   chgEl.textContent = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)} (${chg >= 0 ? '+' : ''}${chgPct.toFixed(2)}%)`;
   chgEl.className = 'posTick ' + (chg >= 0 ? 'up' : 'down');
 
-  // posSub 五欄
   $('cashLabel').textContent = fmt(state.cash);
   $('sharesLabel').textContent = state.shares.toLocaleString();
   $('avgCostLabel').textContent = state.shares > 0 ? state.avgCost.toFixed(2) : '--';
 
-  // 已實現損益
   const realEl = $('realPnlLabel');
   realEl.textContent = (state.realizedPnl >= 0 ? '+' : '') + fmt(state.realizedPnl);
-  realEl.className = 'posVal ' + (state.realizedPnl > 0.01 ? 'up' : state.realizedPnl < -0.01 ? 'down' : 'flat');
+  realEl.className = 'posV ' + (state.realizedPnl > 0.01 ? 'up' : state.realizedPnl < -0.01 ? 'down' : '');
 
   const equity = state.cash + state.shares * cur;
   $('equityLabel').textContent = fmt(equity);
 
-  // 未實現損益（posMain 右側）
+  const unrealLabelEl = $('unrealPnlLabel');
   const unrealPctEl = $('unrealPnlPct');
   const unrealAmtEl = $('unrealPnlAmount');
-  const labelEl = unrealPctEl.parentElement.querySelector('.posLabel');
   if (state.shares > 0) {
-    if (labelEl) labelEl.textContent = '未實現損益';
-    unrealPctEl.classList.remove('hidden');
-    unrealAmtEl.classList.remove('hidden');
+    unrealLabelEl.textContent = '未實現';
     const cost = state.avgCost * state.shares;
     const market = cur * state.shares;
     const pnlAmt = market - cost;
@@ -193,15 +318,13 @@ function maybeUpdatePanel(force = false) {
     unrealAmtEl.textContent = (pnlAmt >= 0 ? '+' : '') + pnlAmt.toFixed(2);
     unrealAmtEl.className = 'posTick ' + (pnlAmt >= 0 ? 'up' : 'down');
   } else {
-    // 沒持倉時隱藏未實現欄位
-    if (labelEl) labelEl.textContent = '空倉';
+    unrealLabelEl.textContent = '空倉';
     unrealPctEl.textContent = '--';
     unrealPctEl.className = 'posPnl flat';
     unrealAmtEl.textContent = '';
     unrealAmtEl.className = 'posTick';
   }
 
-  // 目標進度
   const goalPct = Math.min(100, equity / WIN_TARGET * 100);
   $('goalProgress').style.width = goalPct + '%';
   $('goalPctLabel').textContent = goalPct.toFixed(2) + '%';
@@ -223,7 +346,6 @@ function drawChartArea() {
   if (!state.prices.length) return;
   drawCandleChart();
   if (state.showVol) drawVolChart();
-  if (state.showChip) drawChipSide();
 }
 
 function setCanvas(c) {
@@ -238,7 +360,7 @@ function setCanvas(c) {
   return { ctx, W: w, H: h };
 }
 
-/* ============== Candle Chart ============== */
+/* ============== Candle Chart (升級網格) ============== */
 function drawCandleChart() {
   const c = $('priceChart');
   const { ctx, W, H } = setCanvas(c);
@@ -276,30 +398,36 @@ function drawCandleChart() {
   const chartW = W - padR;
   const candleW = chartW / candles.length;
   const bodyW = Math.max(2, candleW * 0.7);
-
   const py = (p) => 12 + (H - 24) * (1 - (p - lo) / Math.max(0.001, (hi - lo)));
 
-  // 暴露給 chip side 共用 Y
-  state._chartLo = lo;
-  state._chartHi = hi;
-  state._chartCur = isLive ? state.displayPrice : candles[candles.length - 1].c;
-  state._chartH = H;
-
-  // 5 條水平網格
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  // 升級網格：主格線清晰 + 次格線細微
   ctx.lineWidth = 1;
+  // 次水平格線（每 1/8）
+  ctx.strokeStyle = 'rgba(140,160,180,0.04)';
+  for (let g = 1; g < 8; g++) {
+    if (g % 2 === 0) continue;
+    const y = 12 + (H - 24) * g / 8;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
+  }
+  // 主水平格線（每 1/4）
+  ctx.strokeStyle = 'rgba(140,160,180,0.10)';
   for (let g = 0; g <= 4; g++) {
     const y = 12 + (H - 24) * g / 4;
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
   }
-  // 5 條垂直網格（對齊 x 軸時間 label）
-  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  // 主垂直格線（每 1/4）
+  ctx.strokeStyle = 'rgba(140,160,180,0.08)';
   for (let g = 0; g <= 4; g++) {
     const x = chartW * g / 4;
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
   }
+  // 內框（更清晰外框）
+  ctx.strokeStyle = 'rgba(140,160,180,0.18)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, chartW - 1, H - 1);
+
   // 價格刻度
-  ctx.fillStyle = '#555c6e';
+  ctx.fillStyle = '#6c7686';
   ctx.font = '10px JetBrains Mono';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   for (let g = 0; g <= 4; g++) {
@@ -308,7 +436,7 @@ function drawCandleChart() {
     ctx.fillText(priceLabel, chartW + 4, y);
   }
 
-  // K 線：嚴格用本根 close vs open
+  // K 線
   for (let i = 0; i < candles.length; i++) {
     const k = candles[i];
     const cx = (i + 0.5) * candleW;
@@ -340,7 +468,7 @@ function drawCandleChart() {
   // 平均成本線
   if (state.shares > 0 && state.avgCost >= lo && state.avgCost <= hi) {
     const y = py(state.avgCost);
-    ctx.strokeStyle = 'rgba(240, 185, 11, 0.4)';
+    ctx.strokeStyle = 'rgba(240, 185, 11, 0.45)';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 4]);
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
@@ -351,7 +479,7 @@ function drawCandleChart() {
     ctx.fillText('成本 ' + state.avgCost.toFixed(2), 4, y - 2);
   }
 
-  // 掛單線（限價單水平線）
+  // 掛單線
   for (const ord of state.pendingOrders) {
     if (ord.price < lo || ord.price > hi) continue;
     const y = py(ord.price);
@@ -388,7 +516,7 @@ function drawCandleChart() {
 
 function drawMaLine(ctx, arr, candleW, py, color) {
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1.3;
+  ctx.lineWidth = 1.4;
   ctx.beginPath();
   let started = false;
   for (let i = 0; i < arr.length; i++) {
@@ -400,11 +528,10 @@ function drawMaLine(ctx, arr, candleW, py, color) {
   ctx.stroke();
 }
 
+/* 時間軸：顯示 PULSE 編號 */
 function renderTimeAxis(candles) {
-  const showSeconds = state.candlePeriod < 15;
   const el = $('timeAxis');
   if (candles.length === 0) { el.innerHTML = ''; return; }
-  // 5 個位置（對齊 5 條垂直網格）：左到右 0%, 25%, 50%, 75%, 100%
   const c = $('priceChart');
   const W = c.clientWidth;
   const padR = 50;
@@ -412,13 +539,9 @@ function renderTimeAxis(candles) {
   const positions = [0, 0.25, 0.5, 0.75, 1];
   const html = positions.map(p => {
     const idx = Math.min(candles.length - 1, Math.round(p * (candles.length - 1)));
-    const t = new Date(candles[idx].startTime);
-    const hh = String(t.getHours()).padStart(2,'0');
-    const mm = String(t.getMinutes()).padStart(2,'0');
-    const ss = String(t.getSeconds()).padStart(2,'0');
-    const label = showSeconds ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`;
+    const pulse = candles[idx].startPulse;
     const px = p * chartW;
-    return `<span style="left:${px}px">${label}</span>`;
+    return `<span style="left:${px}px">P${String(pulse).padStart(4,'0')}</span>`;
   }).join('');
   el.innerHTML = html;
 }
@@ -444,79 +567,12 @@ function drawVolChart() {
   }
 }
 
-/* v0.5 籌碼分佈：右側並排，共享 Y 軸 */
-function drawChipSide() {
-  const c = $('chipChart');
-  const { ctx, W, H } = setCanvas(c);
-  const lo = state._chartLo, hi = state._chartHi;
-  if (!isFinite(lo) || !isFinite(hi) || hi <= lo) return;
-
-  // 用最近 TOTAL_HISTORY 區間的籌碼分佈（在 lo–hi 範圍內統計）
-  const data = state.prices.slice(-TOTAL_HISTORY);
-  const bins = 30;
-  const buckets = new Array(bins).fill(0);
-  for (const d of data) {
-    if (d.p < lo || d.p > hi) continue;
-    const b = Math.min(bins - 1, Math.max(0, Math.floor((d.p - lo) / (hi - lo) * bins)));
-    buckets[b] += d.v;
-  }
-  const maxB = Math.max(...buckets, 1);
-  const py = (p) => 12 + (H - 24) * (1 - (p - lo) / Math.max(0.001, (hi - lo)));
-
-  // 條形（從右向左長條）
-  for (let b = 0; b < bins; b++) {
-    if (buckets[b] === 0) continue;
-    const w = (buckets[b] / maxB) * (W - 8);
-    const yTop = py(lo + (b + 1) * (hi - lo) / bins);
-    const yBot = py(lo + b * (hi - lo) / bins);
-    const h = Math.max(1, yBot - yTop);
-    const grad = ctx.createLinearGradient(W - w, 0, W, 0);
-    grad.addColorStop(0, 'rgba(41,98,255,0.15)');
-    grad.addColorStop(1, 'rgba(41,98,255,0.55)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(W - w, yTop, w, h);
-  }
-
-  // 現價標記（紅/綠水平線 + 三角）
-  const cur = state._chartCur;
-  if (cur >= lo && cur <= hi) {
-    const y = py(cur);
-    const last = state.prices[state.prices.length - 1];
-    const prev = state.prices[state.prices.length - 2];
-    const color = (prev && last.p >= prev.p) ? '#26a69a' : '#ef5350';
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    // 三角箭頭
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(0, y); ctx.lineTo(6, y - 4); ctx.lineTo(6, y + 4); ctx.closePath();
-    ctx.fill();
-  }
-
-  // 平均成本標記（金色虛線）
-  if (state.shares > 0 && state.avgCost >= lo && state.avgCost <= hi) {
-    const y = py(state.avgCost);
-    ctx.strokeStyle = '#f0b90b';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#f0b90b';
-    ctx.beginPath();
-    ctx.moveTo(0, y); ctx.lineTo(6, y - 3); ctx.lineTo(6, y + 3); ctx.closePath();
-    ctx.fill();
-  }
-}
-
 /* ============== TRADE ============== */
 function currentPrice() { return state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice; }
 function getQty() {
   const mode = state.qtyMode;
-  const p = state.tradingMode === 'limit' ? parseFloat($('limitPriceInput').value) || currentPrice() : currentPrice();
-  if (mode === 'max') {
-    return state.tradingMode === 'limit' ? Math.floor(state.cash / p) : Math.floor(state.cash / p);
-  }
+  const p = state.tradingMode === 'limit' ? (parseFloat($('limitPriceInput').value) || currentPrice()) : currentPrice();
+  if (mode === 'max') return Math.floor(state.cash / p);
   const raw = parseInt($('qtyInput').value, 10);
   return Math.max(1, isNaN(raw) ? 0 : raw);
 }
@@ -525,71 +581,69 @@ function buy() {
   if (state.tradingMode === 'limit') return placeLimitOrder('buy');
   const p = currentPrice();
   let qty = getQty();
-  if (p * qty > state.cash) { qty = Math.floor(state.cash / p); if (qty <= 0) { toast('現金不足'); return; } }
+  if (p * qty > state.cash) { qty = Math.floor(state.cash / p); if (qty <= 0) { toast('現金不足'); playSfx('reject'); return; } }
   executeMarketBuy(qty, p);
-  playSfx('buy');
+  playSfx('marketBuy');
 }
 
 function sell() {
   if (state.tradingMode === 'limit') return placeLimitOrder('sell');
-  if (state.shares <= 0) { toast('沒有持倉'); return; }
+  if (state.shares <= 0) { toast('沒有持倉'); playSfx('reject'); return; }
   const p = currentPrice();
   let qty = state.qtyMode === 'max' ? state.shares : Math.min(state.shares, getQty());
   if (qty <= 0) return;
   executeMarketSell(qty, p);
-  playSfx('sell');
+  playSfx('marketSell');
 }
 
-function executeMarketBuy(qty, p) {
+function executeMarketBuy(qty, p, fromLimit = false) {
   const totalCost = state.avgCost * state.shares + p * qty;
   state.shares += qty;
   state.avgCost = totalCost / state.shares;
   state.cash -= p * qty;
   state.trades++;
-  log(`買 ${qty} @${p.toFixed(2)} = ${fmt(p*qty)}`, 'buy');
-  state.executedHistory.unshift({ id: state.nextOrderId++, side: 'buy', qty, price: p, ts: Date.now(), profit: null });
+  log(`買 ${qty} @${p.toFixed(2)} = ${fmt(p*qty)}`, 'buy', 'trade');
+  state.executedHistory.unshift({ id: state.nextOrderId++, side: 'buy', qty, price: p, ts: Date.now(), profit: null, kind: fromLimit ? 'limit' : 'market' });
   if (state.executedHistory.length > 50) state.executedHistory.pop();
   maybeUpdatePanel(true);
   updateOrdersUI();
 }
 
-function executeMarketSell(qty, p) {
+function executeMarketSell(qty, p, fromLimit = false) {
   const profit = (p - state.avgCost) * qty;
   state.realizedPnl += profit;
   state.cash += p * qty;
   state.shares -= qty;
   if (state.shares === 0) state.avgCost = 0;
   state.trades++;
-  log(`賣 ${qty} @${p.toFixed(2)} ${profit >= 0 ? '+' : ''}${fmt(profit)}`, 'sell');
-  state.executedHistory.unshift({ id: state.nextOrderId++, side: 'sell', qty, price: p, ts: Date.now(), profit });
+  log(`賣 ${qty} @${p.toFixed(2)} ${profit >= 0 ? '+' : ''}${fmt(profit)}`, 'sell', 'trade');
+  state.executedHistory.unshift({ id: state.nextOrderId++, side: 'sell', qty, price: p, ts: Date.now(), profit, kind: fromLimit ? 'limit' : 'market' });
   if (state.executedHistory.length > 50) state.executedHistory.pop();
   maybeUpdatePanel(true);
   updateOrdersUI();
 }
 
-/* 限價單 */
 function placeLimitOrder(side) {
   const price = parseFloat($('limitPriceInput').value);
-  if (!isFinite(price) || price <= 0) { toast('請輸入有效目標價'); return; }
+  if (!isFinite(price) || price <= 0) { toast('請輸入有效目標價'); playSfx('reject'); return; }
   let qty = getQty();
-  if (qty <= 0) { toast('請輸入數量'); return; }
+  if (qty <= 0) { toast('請輸入數量'); playSfx('reject'); return; }
   if (side === 'buy') {
     if (price * qty > state.cash) {
       qty = Math.floor(state.cash / price);
-      if (qty <= 0) { toast('現金不足'); return; }
+      if (qty <= 0) { toast('現金不足'); playSfx('reject'); return; }
     }
   } else {
-    if (state.shares <= 0) { toast('沒有持倉可賣'); return; }
+    if (state.shares <= 0) { toast('沒有持倉可賣'); playSfx('reject'); return; }
     qty = state.qtyMode === 'max' ? state.shares : Math.min(state.shares, qty);
     if (qty <= 0) return;
   }
   state.pendingOrders.push({
-    id: state.nextOrderId++,
-    side, qty, price, ts: Date.now()
+    id: state.nextOrderId++, side, qty, price, ts: Date.now(),
   });
-  log(`掛${side === 'buy' ? '買' : '賣'} ${qty} @${price.toFixed(2)}`, side);
+  log(`掛${side === 'buy' ? '買' : '賣'} ${qty} @${price.toFixed(2)}`, side, 'trade');
   toast(`已掛單 ${side === 'buy' ? '買' : '賣'} ${qty}@${price.toFixed(2)}`, 'news');
-  playSfx(side);
+  playSfx('orderPlace');
   updateOrdersUI();
   drawChartArea();
 }
@@ -602,22 +656,17 @@ function checkPendingOrders(curPrice) {
     if (ord.side === 'buy' && curPrice <= ord.price) trigger = true;
     if (ord.side === 'sell' && curPrice >= ord.price) trigger = true;
     if (trigger) {
-      // 用觸發價作成交價（簡化）
       if (ord.side === 'buy') {
-        if (ord.price * ord.qty > state.cash) {
-          log(`掛買失敗（現金不足）${ord.qty}@${ord.price.toFixed(2)}`, 'sell');
-          continue;
-        }
-        executeMarketBuy(ord.qty, ord.price);
-        toast(`觸發掛買 ${ord.qty}@${ord.price.toFixed(2)}`, 'surge');
+        if (ord.price * ord.qty > state.cash) { log(`掛買失敗（現金不足）${ord.qty}@${ord.price.toFixed(2)}`, 'sell', 'trade'); continue; }
+        executeMarketBuy(ord.qty, ord.price, true);
+        toast(`限價買入 ${ord.qty}@${ord.price.toFixed(2)}`, 'surge');
+        playSfx('limitFill');
       } else {
         const qty = Math.min(state.shares, ord.qty);
-        if (qty <= 0) {
-          log(`掛賣失敗（無持倉）${ord.qty}@${ord.price.toFixed(2)}`, 'sell');
-          continue;
-        }
-        executeMarketSell(qty, ord.price);
-        toast(`觸發掛賣 ${qty}@${ord.price.toFixed(2)}`, 'surge');
+        if (qty <= 0) { log(`掛賣失敗（無持倉）${ord.qty}@${ord.price.toFixed(2)}`, 'sell', 'trade'); continue; }
+        executeMarketSell(qty, ord.price, true);
+        toast(`限價賣出 ${qty}@${ord.price.toFixed(2)}`, 'surge');
+        playSfx('limitFill');
       }
     } else {
       remaining.push(ord);
@@ -629,28 +678,26 @@ function checkPendingOrders(curPrice) {
 
 function cancelOrder(id) {
   state.pendingOrders = state.pendingOrders.filter(o => o.id !== id);
-  log('取消掛單', '');
+  log('取消掛單', '', 'trade');
+  playSfx('click');
   updateOrdersUI();
   drawChartArea();
 }
 
 function updateOrdersUI() {
-  // 委託按鈕指示燈
   $('ordersBtn').classList.toggle('has-pending', state.pendingOrders.length > 0);
-
-  // pending list
   const pList = $('pendingList');
   if (state.pendingOrders.length === 0) {
     pList.innerHTML = '<div class="orderEmpty">尚無掛單</div>';
   } else {
     pList.innerHTML = state.pendingOrders.map(o => {
-      const dt = new Date(o.ts);
-      const ts = `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}:${String(dt.getSeconds()).padStart(2,'0')}`;
+      const placedAt = state.tick - Math.round((Date.now() - o.ts) / TICK_MS);
+      const placedPulse = Math.max(0, Math.floor(placedAt * PULSE_PER_TICK));
       return `<div class="orderItem">
         <span class="orderSide ${o.side}">${o.side === 'buy' ? '買' : '賣'}</span>
         <div>
           <div class="orderInfo">${o.qty} 股 @ ${o.price.toFixed(2)}</div>
-          <div class="orderSub">掛單於 ${ts}</div>
+          <div class="orderSub">掛單於 P${String(placedPulse).padStart(4,'0')}</div>
         </div>
         <button class="orderAct" data-cancel="${o.id}">取消</button>
       </div>`;
@@ -659,23 +706,21 @@ function updateOrdersUI() {
       b.onclick = () => cancelOrder(parseInt(b.dataset.cancel, 10));
     });
   }
-
-  // history list
   const hList = $('historyList');
   if (state.executedHistory.length === 0) {
     hList.innerHTML = '<div class="orderEmpty">尚無歷史</div>';
   } else {
     hList.innerHTML = state.executedHistory.map(o => {
-      const dt = new Date(o.ts);
-      const ts = `${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}:${String(dt.getSeconds()).padStart(2,'0')}`;
+      const ph = state.tick - Math.round((Date.now() - o.ts) / TICK_MS);
+      const pulse = Math.max(0, Math.floor(ph * PULSE_PER_TICK));
       const resultHtml = (o.profit != null)
         ? `<span class="orderResult ${o.profit >= 0 ? 'profit' : 'loss'}">${o.profit >= 0 ? '+' : ''}${fmt(o.profit)}</span>`
         : '<span class="orderSub">建倉</span>';
       return `<div class="orderItem">
         <span class="orderSide ${o.side}">${o.side === 'buy' ? '買' : '賣'}</span>
         <div>
-          <div class="orderInfo">${o.qty} 股 @ ${o.price.toFixed(2)}</div>
-          <div class="orderSub">${ts}</div>
+          <div class="orderInfo">${o.qty} 股 @ ${o.price.toFixed(2)} <span class="orderSub">${o.kind === 'limit' ? '限價' : '市價'}</span></div>
+          <div class="orderSub">P${String(pulse).padStart(4,'0')}</div>
         </div>
         ${resultHtml}
       </div>`;
@@ -683,16 +728,74 @@ function updateOrdersUI() {
   }
 }
 
-function log(msg, cls = '') {
-  const el = $('logArea');
-  const line = document.createElement('div');
-  line.className = 'log-entry ' + cls;
-  const now = new Date();
-  const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
-  line.textContent = `${ts}  ${msg}`;
-  el.insertBefore(line, el.firstChild);
-  while (el.childNodes.length > 30) el.removeChild(el.lastChild);
+/* ============== 日曆 UI ============== */
+function updateCalendarUI() {
+  $('calCurrentPulse').textContent = pulseStr(currentPulse());
+  const uList = $('upcomingList');
+  if (state.upcomingEvents.length === 0) {
+    uList.innerHTML = '<div class="orderEmpty">尚無預告事件</div>';
+  } else {
+    const now = currentPulse();
+    uList.innerHTML = state.upcomingEvents
+      .slice().sort((a, b) => a.executePulse - b.executePulse)
+      .map(ev => {
+        const remain = ev.executePulse - now;
+        return `<div class="calItem ${ev.type}">
+          <div>
+            <div class="calPulse ${ev.type}">P${String(ev.executePulse).padStart(4,'0')}</div>
+            <div class="calCountdown">${remain > 0 ? remain + ' Pulse 後' : '即將觸發'}</div>
+          </div>
+          <div>
+            <div class="calText">${ev.type === 'good' ? '◆ 利多' : '◆ 利空'} — ${ev.text}</div>
+            <div class="calSub">${ev.impact}</div>
+          </div>
+        </div>`;
+      }).join('');
+  }
+  const pList = $('pastList');
+  if (state.pastEvents.length === 0) {
+    pList.innerHTML = '<div class="orderEmpty">尚無已發生事件</div>';
+  } else {
+    pList.innerHTML = state.pastEvents.slice(0, 30).map(ev => {
+      return `<div class="calItem ${ev.type} past">
+        <div>
+          <div class="calPulse ${ev.type}">P${String(ev.actualPulse || ev.executePulse).padStart(4,'0')}</div>
+          <div class="calCountdown">已觸發</div>
+        </div>
+        <div>
+          <div class="calText">${ev.type === 'good' ? '◆ 利多' : '◆ 利空'} — ${ev.text}</div>
+          <div class="calSub">${ev.impact}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }
 }
+
+/* ============== LOG ============== */
+function log(msg, cls = '', cat = 'all') {
+  const ts = pulseStr(currentPulse());
+  const entry = { ts, msg, cls };
+  state.logEntries.all.unshift(entry);
+  if (cat === 'trade') state.logEntries.trade.unshift(entry);
+  if (cat === 'news') state.logEntries.news.unshift(entry);
+  if (state.logEntries.all.length > 100) state.logEntries.all.pop();
+  if (state.logEntries.trade.length > 100) state.logEntries.trade.pop();
+  if (state.logEntries.news.length > 100) state.logEntries.news.pop();
+  renderLog();
+}
+function renderLog() {
+  const targets = { all: 'logAll', trade: 'logTrade', news: 'logNews' };
+  for (const [cat, id] of Object.entries(targets)) {
+    const el = $(id);
+    if (!el) continue;
+    const list = state.logEntries[cat];
+    if (list.length === 0) { el.innerHTML = ''; continue; }
+    el.innerHTML = list.map(e =>
+      `<div class="log-entry ${e.cls}"><span class="lt">${e.ts}</span>${e.msg}</div>`
+    ).join('');
+  }
+}
+
 function toast(msg, cls = '', dur = 2400) {
   const t = $('toast');
   t.textContent = msg; t.className = cls;
@@ -701,14 +804,32 @@ function toast(msg, cls = '', dur = 2400) {
   toast._t = setTimeout(() => t.classList.add('hidden'), dur);
 }
 
+/* ============== 音效（合成）============== */
 function playSfx(kind) {
   if (state.muted || !audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   const now = audioCtx.currentTime;
-  if (kind === 'buy') { beep(660, 0.06, now, 0.25); beep(880, 0.08, now + 0.07, 0.25); }
-  else if (kind === 'sell') { beep(523, 0.08, now, 0.25); beep(392, 0.10, now + 0.09, 0.25); }
-  else if (kind === 'crash') { beep(120, 0.7, now, 0.35, 'sawtooth'); beep(90, 0.7, now + 0.1, 0.25, 'sawtooth'); }
-  else if (kind === 'surge') { [880, 1100, 1320].forEach((f, i) => beep(f, 0.08, now + i*0.07, 0.25)); }
-  else if (kind === 'win') { [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.2, now + i*0.13, 0.35)); }
+  if (kind === 'marketBuy') {
+    beep(660, 0.06, now, 0.22); beep(880, 0.08, now + 0.06, 0.22);
+  } else if (kind === 'marketSell') {
+    beep(660, 0.06, now, 0.22); beep(440, 0.10, now + 0.06, 0.22);
+  } else if (kind === 'orderPlace') {
+    beep(700, 0.04, now, 0.18); beep(900, 0.05, now + 0.05, 0.18);
+  } else if (kind === 'limitFill') {
+    [700, 900, 1100, 1320].forEach((f, i) => beep(f, 0.06, now + i*0.05, 0.22));
+  } else if (kind === 'news') {
+    beep(330, 0.10, now, 0.18, 'triangle'); beep(440, 0.08, now + 0.08, 0.16, 'triangle');
+  } else if (kind === 'click') {
+    beep(1200, 0.02, now, 0.12);
+  } else if (kind === 'reject') {
+    beep(220, 0.16, now, 0.22, 'sawtooth');
+  } else if (kind === 'crash') {
+    beep(120, 0.7, now, 0.32, 'sawtooth'); beep(90, 0.7, now + 0.1, 0.22, 'sawtooth');
+  } else if (kind === 'surge') {
+    [880, 1100, 1320].forEach((f, i) => beep(f, 0.08, now + i*0.07, 0.25));
+  } else if (kind === 'win') {
+    [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.2, now + i*0.13, 0.32));
+  }
 }
 function beep(freq, dur, startAt, gain, type='square') {
   const o = audioCtx.createOscillator();
@@ -724,21 +845,16 @@ function beep(freq, dur, startAt, gain, type='square') {
 function setupBGM() {
   bgm = new Audio('./assets/audio/bgm.mp3');
   bgm.loop = true; bgm.volume = 0.22;
-  const start = () => {
-    if (state.muted) return;
-    bgm.play().catch(()=>{});
-    window.removeEventListener('mousedown', start);
-    window.removeEventListener('touchstart', start);
-    window.removeEventListener('keydown', start);
-  };
-  window.addEventListener('mousedown', start);
-  window.addEventListener('touchstart', start, { passive: true });
-  window.addEventListener('keydown', start);
+}
+function startBGM() {
+  if (!bgm || state.muted) return;
+  bgm.play().catch(()=>{});
 }
 function toggleMute() {
   state.muted = !state.muted;
   $('muteBtn').textContent = state.muted ? '♪̷' : '♪';
   if (bgm) { if (state.muted) bgm.pause(); else bgm.play().catch(()=>{}); }
+  playSfx('click');
 }
 function checkWin() {
   if (state.won) return;
@@ -747,19 +863,17 @@ function checkWin() {
     state.won = true;
     const elapsed = Math.round((Date.now() - state.startTime) / 1000);
     const mins = Math.floor(elapsed / 60), secs = elapsed % 60;
-    $('winTime').textContent = `${mins} 分 ${secs} 秒`;
+    $('winTime').textContent = `${mins} 分 ${secs} 秒 (PULSE ${currentPulse()})`;
     $('winTrades').textContent = state.trades;
     $('winScreen').classList.remove('hidden');
     playSfx('win');
   }
 }
 
-/* OVERLAY 控制 */
 function openOverlay(id) { $(id).classList.remove('hidden'); }
 function closeOverlay(id) { $(id).classList.add('hidden'); }
 
 function updateMaLabels() {
-  // v0.5: 用 #ma1Legend / #ma2Legend wrapper 顯示/隱藏
   $('ma1Label').textContent = `MA ${state.ma1Period}`;
   $('ma2Label').textContent = `MA ${state.ma2Period}`;
   $('ma1Legend').classList.toggle('hidden', !state.ma1On);
@@ -767,9 +881,7 @@ function updateMaLabels() {
 }
 
 function updateSubPanels() {
-  // v0.5: 籌碼分佈是 side panel，不在 subPanels 下方
   $('subPanels').classList.toggle('hidden', !state.showVol);
-  $('chipChart').classList.toggle('hidden', !state.showChip);
   drawChartArea();
 }
 
@@ -778,14 +890,12 @@ function updateModeUI() {
     b.classList.toggle('active', b.dataset.mode === state.tradingMode);
   });
   $('limitPriceRow').classList.toggle('hidden', state.tradingMode !== 'limit');
-  // 限價輸入框預設為現價
   if (state.tradingMode === 'limit') {
     const inp = $('limitPriceInput');
     if (!inp.value || parseFloat(inp.value) <= 0) inp.value = currentPrice().toFixed(2);
   }
 }
 
-/* ============== CHART INTERACTION (v0.5: 反向滑動) ============== */
 function setupChartGesture() {
   const c = $('priceChart');
   let dragging = false;
@@ -794,12 +904,9 @@ function setupChartGesture() {
   let lockedAxis = null;
 
   const begin = (x, y) => {
-    dragging = true;
-    startX = x; startY = y;
-    startOffset = state.viewOffset;
-    startScale = state.yScaleMult;
-    lockedAxis = null;
-    c.classList.add('dragging');
+    dragging = true; startX = x; startY = y;
+    startOffset = state.viewOffset; startScale = state.yScaleMult;
+    lockedAxis = null; c.classList.add('dragging');
   };
   const move = (x, y) => {
     if (!dragging) return;
@@ -814,7 +921,6 @@ function setupChartGesture() {
       const candleW = W / VISIBLE_CANDLES_BASE;
       const allLen = buildCandles(state.candlePeriod).length;
       const maxOffset = Math.max(0, allLen - VISIBLE_CANDLES_BASE);
-      // v0.5 反向：手指往右滑 → 看更早的 K（offset 增加）
       state.viewOffset = Math.max(0, Math.min(maxOffset, Math.round(startOffset + dx / candleW)));
     } else if (lockedAxis === 'y') {
       const factor = Math.pow(1.012, dy);
@@ -833,25 +939,58 @@ function setupChartGesture() {
   }, { passive: false });
   c.addEventListener('touchend', end);
   c.addEventListener('touchcancel', end);
-
   c.addEventListener('wheel', e => {
     e.preventDefault();
     const factor = e.deltaY > 0 ? 1.1 : 1/1.1;
     state.yScaleMult = Math.max(0.2, Math.min(5, state.yScaleMult * factor));
     drawChartArea();
   }, { passive: false });
+  $('resetViewBtn').onclick = () => { state.viewOffset = 0; state.yScaleMult = 1; drawChartArea(); playSfx('click'); };
+}
 
-  $('resetViewBtn').onclick = () => {
-    state.viewOffset = 0; state.yScaleMult = 1; drawChartArea();
-  };
+/* ============== Splash 動畫背景 ============== */
+function drawSplashChart() {
+  const c = $('splashChart');
+  if (!c || $('splashScreen').classList.contains('hidden')) return;
+  const ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  // 漂浮 K 線剪影
+  const N = 60;
+  const candleW = w / N;
+  let price = h * 0.5;
+  const t0 = performance.now() / 1000;
+  ctx.strokeStyle = 'rgba(41,98,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, price);
+  for (let i = 0; i < N; i++) {
+    price += Math.sin((i + t0 * 4) * 0.3) * 8 + (Math.random() - 0.5) * 4;
+    price = Math.max(h*0.15, Math.min(h*0.85, price));
+    const x = i * candleW;
+    ctx.lineTo(x, price);
+  }
+  ctx.stroke();
+  requestAnimationFrame(drawSplashChart);
+}
+
+function startGame() {
+  $('splashScreen').classList.add('hidden');
+  state.started = true;
+  state.startTime = Date.now() - state.tick * TICK_MS;
+  startBGM();
+  playSfx('limitFill');
 }
 
 function init() {
-  // 暖場：600 tick 給足歷史
+  // 暖場 600 tick
   state.prices = [{ t: 0, p: state.basePrice, v: 1000 }];
   for (let i = 1; i < 600; i++) {
     state.tick = i;
-    const next = nextPrice();
+    const next = nextPrice(true);  // 暖場不出新聞
     state.prices.push({ t: i, p: next.p, v: next.v });
   }
   state.tick = state.prices.length;
@@ -866,6 +1005,7 @@ function init() {
       document.querySelectorAll('.qtyBtn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       if (state.qtyMode !== 'max') $('qtyInput').value = state.qtyMode;
+      playSfx('click');
     };
   });
   $('qtyInput').value = '100';
@@ -875,15 +1015,10 @@ function init() {
   });
   $('qtyInput').addEventListener('input', () => { state.qtyMode = $('qtyInput').value; });
 
-  // mode btn (市價/限價)
   document.querySelectorAll('.modeBtn').forEach(btn => {
-    btn.onclick = () => {
-      state.tradingMode = btn.dataset.mode;
-      updateModeUI();
-    };
+    btn.onclick = () => { state.tradingMode = btn.dataset.mode; updateModeUI(); playSfx('click'); };
   });
 
-  // period btn (預設 5s)
   document.querySelectorAll('.periodBtn').forEach(btn => {
     btn.onclick = () => {
       state.candlePeriod = parseInt(btn.dataset.period, 10);
@@ -891,10 +1026,10 @@ function init() {
       btn.classList.add('active');
       state.viewOffset = 0;
       drawChartArea();
+      playSfx('click');
     };
   });
 
-  // ma inputs
   const onMa1Change = () => {
     const v = parseInt($('ma1Input').value, 10);
     if (!isNaN(v) && v > 0) state.ma1Period = v;
@@ -911,40 +1046,68 @@ function init() {
   $('ma1Toggle').addEventListener('change', onMa1Change);
   $('ma2Input').addEventListener('input', onMa2Change);
   $('ma2Toggle').addEventListener('change', onMa2Change);
-
-  // sub toggle
   $('volToggle').addEventListener('change', () => { state.showVol = $('volToggle').checked; updateSubPanels(); });
-  $('chipToggle').addEventListener('change', () => { state.showChip = $('chipToggle').checked; updateSubPanels(); });
 
   $('buyBtn').onclick = buy;
   $('sellBtn').onclick = sell;
   $('muteBtn').onclick = toggleMute;
-  $('indicatorBtn').onclick = () => openOverlay('indicatorOverlay');
-  $('ordersBtn').onclick = () => { updateOrdersUI(); openOverlay('ordersOverlay'); };
+  $('indicatorBtn').onclick = () => { openOverlay('indicatorOverlay'); playSfx('click'); };
+  $('ordersBtn').onclick = () => { updateOrdersUI(); openOverlay('ordersOverlay'); playSfx('click'); };
+  $('calendarBtn').onclick = () => { updateCalendarUI(); openOverlay('calendarOverlay'); playSfx('click'); };
   $('restartBtn').onclick = () => location.reload();
+  $('startBtn').onclick = startGame;
 
-  // overlay close buttons
   document.querySelectorAll('.overlayClose').forEach(b => {
-    b.onclick = () => closeOverlay(b.dataset.close);
+    b.onclick = () => { closeOverlay(b.dataset.close); playSfx('click'); };
   });
-  // 點 overlay 背景關閉
   document.querySelectorAll('.overlay').forEach(o => {
     o.addEventListener('click', (e) => { if (e.target === o) o.classList.add('hidden'); });
   });
 
-  // order tab switch
-  document.querySelectorAll('.orderTab').forEach(t => {
+  // 委託 / 日曆 / log 分頁
+  document.querySelectorAll('[data-tab]').forEach(t => {
     t.onclick = () => {
-      document.querySelectorAll('.orderTab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('[data-tab]').forEach(b => b.classList.remove('active'));
       t.classList.add('active');
       const tab = t.dataset.tab;
       $('pendingTab').classList.toggle('hidden', tab !== 'pending');
       $('historyTab').classList.toggle('hidden', tab !== 'history');
+      playSfx('click');
     };
   });
+  document.querySelectorAll('[data-caltab]').forEach(t => {
+    t.onclick = () => {
+      document.querySelectorAll('[data-caltab]').forEach(b => b.classList.remove('active'));
+      t.classList.add('active');
+      const tab = t.dataset.caltab;
+      $('upcomingTab').classList.toggle('hidden', tab !== 'upcoming');
+      $('pastTab').classList.toggle('hidden', tab !== 'past');
+      playSfx('click');
+    };
+  });
+  document.querySelectorAll('[data-logtab]').forEach(t => {
+    t.onclick = () => {
+      document.querySelectorAll('[data-logtab]').forEach(b => b.classList.remove('active'));
+      t.classList.add('active');
+      const tab = t.dataset.logtab;
+      $('logAll').classList.toggle('hidden', tab !== 'all');
+      $('logTrade').classList.toggle('hidden', tab !== 'trade');
+      $('logNews').classList.toggle('hidden', tab !== 'news');
+      state.logTab = tab;
+      playSfx('click');
+    };
+  });
+  // log 展開/收合
+  $('logToggleBtn').onclick = () => {
+    state.logExpanded = !state.logExpanded;
+    $('logPanel').classList.toggle('expanded', state.logExpanded);
+    $('logPanel').classList.toggle('collapsed', !state.logExpanded);
+    playSfx('click');
+  };
 
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
+    if (!state.started) return;
     if (e.key === 'b' || e.key === 'B') buy();
     if (e.key === 's' || e.key === 'S') sell();
     if (e.key === 'Escape') {
@@ -959,9 +1122,15 @@ function init() {
   maybeUpdatePanel(true);
   drawChartArea();
 
+  // splash 動畫
+  requestAnimationFrame(drawSplashChart);
+
   setInterval(tick, TICK_MS);
   setInterval(subtick, SUBTICK_MS);
   window.addEventListener('resize', () => { drawChartArea(); });
+
+  // 初始 PULSE label
+  $('pulseLabel').textContent = pulseStr(currentPulse());
 }
 
 window.addEventListener('DOMContentLoaded', init);
