@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=18">
+<link rel="stylesheet" href="./style.css?v=19">
 </head>
 <body>
 
@@ -54,11 +54,13 @@
         <span class="brandPulse" id="pulseLabel">DAY 0000</span>
       </div>
       <div class="topActions">
+        <button id="backGlobeBtn" title="返回市場">← 市場</button>
+        <button id="portfolioBtn" title="總資產覽">總覽</button>
         <button id="leaderboardBtn" title="排行榜">榜</button>
-        <button id="calendarBtn" title="日曆">日曆</button>
-        <button id="ordersBtn" title="委託明細">委託</button>
-        <button id="indicatorBtn" title="指標選單">指標</button>
-        <button id="muteBtn" title="切換音樂">♪</button>
+        <button id="calendarBtn" title="日曆">日</button>
+        <button id="ordersBtn" title="委託">委</button>
+        <button id="indicatorBtn" title="指標">指</button>
+        <button id="muteBtn" title="音樂">♪</button>
       </div>
     </div>
 
@@ -108,6 +110,21 @@
       <div class="lbFooter">
         <button id="dataCodeBtn" class="lbCodeBtn">生成數據碼</button>
         <textarea id="dataCodeOutput" class="lbCodeOutput" readonly placeholder="點擊上方按鈕生成..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- 總資產總覽 -->
+  <div id="portfolioOverlay" class="overlay hidden">
+    <div class="overlayPanel large">
+      <div class="overlayHeader">
+        <span class="overlayTitle">資產總覽</span>
+        <button class="overlayClose" data-close="portfolioOverlay">✕</button>
+      </div>
+      <div id="portfolioList" class="pfList"></div>
+      <div class="pfFooter">
+        <span class="pfFooterLabel">合計總資產</span>
+        <span id="portfolioTotal" class="pfFooterVal">--</span>
       </div>
     </div>
   </div>
@@ -247,11 +264,12 @@
     </div>
   </div>
 
-  <div id="toast" class="hidden"></div>
 </div>
+
+<div id="toast" class="hidden"></div>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="./game.js?v=18"></script>
+<script src="./game.js?v=19"></script>
 </body>
 </html>

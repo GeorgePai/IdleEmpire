@@ -263,6 +263,80 @@ function toast(msg) {
 }
 
 /* ============================================================
+   SEED-BASED PRNG (synchronized price across all clients)
+   ============================================================ */
+const SYNC_DAY_MS = 24 * 3600 * 1000;
+
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return function() {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function getMarketDaySeed(mktId) {
+  const day = Math.floor(Date.now() / SYNC_DAY_MS);
+  let h = (day * 0x9e3779b9) >>> 0;
+  for (let i = 0; i < mktId.length; i++) {
+    h = Math.imul(h ^ mktId.charCodeAt(i), 0x85ebca77);
+    h = ((h << 13) | (h >>> 19)) >>> 0;
+  }
+  return h;
+}
+
+// Consume exactly 8 randoms per call → deterministic tick advancement
+function seededGBMStep(rng, prev, m) {
+  const u1=rng(),u2=rng(),u3=rng(),u4=rng();
+  const z = (u1+u2+u3+u4-2)*0.7071;
+  const bsR=rng(), bsD=rng(), bsM=rng();
+  rng(); // padding
+  let p = prev * Math.exp(
+    (m.drift - 0.5*m.sigma*m.sigma)*TICK_MS/1000
+    + m.sigma * z * Math.sqrt(TICK_MS/1000)
+  );
+  if (bsR < m.blackSwan/5) p *= 1+(bsD<0.5?1:-1)*(0.04+bsM*0.05);
+  if (m.meanRev > 0) p += m.meanRev*(m.base-p)*0.001;
+  return Math.max(p, m.base*0.001);
+}
+
+let priceRng = null;
+
+function initSyncedPrices(mktId) {
+  const m = MARKETS[mktId];
+  const seed = getMarketDaySeed(mktId);
+  const rng  = mulberry32(seed);
+  const absTick = Math.floor((Date.now() % SYNC_DAY_MS) / TICK_MS);
+  const histStart = Math.max(0, absTick - 600);
+
+  let price = m.base;
+  for (let t = 0; t < histStart; t++) price = seededGBMStep(rng, price, m);
+
+  state.prices = [];
+  for (let t = histStart; t <= absTick; t++) {
+    price = seededGBMStep(rng, price, m);
+    const prev = state.prices.length ? state.prices[state.prices.length-1].p : m.base;
+    const chg = Math.abs(price - prev) / (prev||1);
+    state.prices.push({ t: t-histStart, p: +price.toFixed(4),
+                        v: Math.round(800 + chg*80000 + Math.random()*500) });
+  }
+  state.tick = absTick - histStart;
+  priceRng = rng;
+}
+
+function getSeedCurrentPrice(mktId) {
+  const m = MARKETS[mktId];
+  const seed = getMarketDaySeed(mktId);
+  const rng = mulberry32(seed);
+  const absTick = Math.floor((Date.now() % SYNC_DAY_MS) / TICK_MS);
+  let price = m.base;
+  for (let t = 0; t < absTick; t++) price = seededGBMStep(rng, price, m);
+  return price;
+}
+
+/* ============================================================
    GBM ENGINE
    ============================================================ */
 function gauss() {
@@ -274,33 +348,26 @@ function gauss() {
 
 function nextPrice(suppressNews) {
   const last = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
-  let p = last;
-
-  // black swan
-  if (Math.random() < state.blackSwanProb / 5) {
-    const dir = Math.random() < 0.5 ? 1 : -1;
-    p *= (1 + dir * (0.04 + Math.random()*0.05));
+  let p;
+  const m = { sigma:state.sigma, drift:state.drift, blackSwan:state.blackSwanProb,
+               meanRev:state.meanReversion, base:state.basePrice };
+  if (priceRng) {
+    p = seededGBMStep(priceRng, last, m);
+  } else {
+    p = last;
+    if (Math.random() < state.blackSwanProb/5) {
+      p *= 1+(Math.random()<0.5?1:-1)*(0.04+Math.random()*0.05);
+    }
+    if (state.meanReversion>0) p+=state.meanReversion*(state.basePrice-p)*0.001;
+    p *= Math.exp((state.drift-0.5*state.sigma*state.sigma)*TICK_MS/1000
+                  +state.sigma*gauss()*Math.sqrt(TICK_MS/1000));
+    p = Math.max(0.01, p);
   }
-
-  // mean reversion
-  if (state.meanReversion > 0) {
-    const mid = state.basePrice;
-    p += state.meanReversion * (mid - p) * 0.001;
-  }
-
-  // GBM
-  p *= Math.exp((state.drift - 0.5*state.sigma*state.sigma)*TICK_MS/1000
-                + state.sigma * gauss() * Math.sqrt(TICK_MS/1000));
-
-  p = Math.max(0.01, +p.toFixed(4));
-
-  // volume
-  const chgPct = Math.abs(p - last) / last;
-  const v = Math.round(800 + chgPct * 80000 + Math.random() * 500);
-
-  state.prices.push({ t: state.tick, p, v });
+  p = +p.toFixed(4);
+  const chgPct = Math.abs(p-last)/(last||1);
+  const v = Math.round(800+chgPct*80000+Math.random()*500);
+  state.prices.push({ t:state.tick, p, v });
   if (state.prices.length > 600) state.prices.shift();
-
   if (!suppressNews) maybeAnnounceForecast();
   return p;
 }
@@ -939,6 +1006,62 @@ function projectPoint(px, py, pz, cx, cy, r) {
   return { sx: cx + rx, sy: cy - ry2, visible: rz2 > -r * 0.05 };
 }
 
+/* ============================================================
+   CONTINENT POLYGONS (simplified lat/lng outlines)
+   ============================================================ */
+const CONTINENT_POLYS = [
+  // North America
+  [[72,-140],[72,-60],[55,-55],[47,-53],[45,-67],[40,-66],[35,-76],[30,-81],[25,-80],
+   [25,-90],[18,-87],[22,-105],[28,-112],[32,-117],[38,-123],[50,-124],[60,-140]],
+  // Central America
+  [[25,-90],[20,-88],[14,-84],[8,-78],[10,-82],[14,-87]],
+  // Greenland
+  [[76,-70],[84,-35],[76,25],[65,-20],[60,-44]],
+  // South America
+  [[10,-74],[8,-62],[5,-51],[0,-50],[-5,-35],[-23,-43],[-33,-52],
+   [-55,-68],[-45,-65],[-22,-41],[5,-51]],
+  // Europe
+  [[71,28],[60,5],[51,-6],[36,-6],[36,5],[37,15],[37,28],[45,30],[55,22],[60,28]],
+  // Scandinavia
+  [[70,28],[70,31],[65,15],[60,5],[57,8],[60,11],[70,20]],
+  // British Isles
+  [[58,-5],[60,-2],[58,0],[54,-3],[51,-5],[54,-6]],
+  // Africa
+  [[37,10],[37,37],[11,44],[0,42],[-10,40],[-35,27],[-35,18],[0,-17],[15,-17]],
+  // Arabian Peninsula
+  [[30,35],[29,49],[22,60],[12,44],[15,44]],
+  // India
+  [[28,68],[28,90],[8,78],[20,73]],
+  // Asia (main)
+  [[71,60],[71,140],[55,160],[45,140],[30,120],[20,120],[10,78],[35,58],[55,58]],
+  // Indochina
+  [[20,100],[20,108],[10,108],[5,103],[15,100]],
+  // Japan
+  [[45,142],[35,130],[33,132],[38,141]],
+  // Australia
+  [[-15,130],[-15,140],[-25,153],[-38,147],[-38,114],[-22,114]],
+  // New Zealand
+  [[-35,174],[-47,168],[-47,171]],
+];
+
+function drawContinents(ctx, cx, cy, r) {
+  ctx.fillStyle = '#162a1e';
+  ctx.strokeStyle = '#1c3525';
+  ctx.lineWidth = 0.8;
+  CONTINENT_POLYS.forEach(poly => {
+    ctx.beginPath();
+    let penDown = false;
+    poly.forEach(([lat, lng]) => {
+      const {x,y,z} = latLngToXYZ(lat, lng, r);
+      const pt = projectPoint(x, y, z, cx, cy, r);
+      if (!pt.visible) { penDown = false; return; }
+      if (!penDown) { ctx.moveTo(pt.sx, pt.sy); penDown = true; }
+      else ctx.lineTo(pt.sx, pt.sy);
+    });
+    if (penDown) { ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  });
+}
+
 function drawGlobe() {
   const c = $('globeCanvas'); if (!c) return;
   const dpr = window.devicePixelRatio || 1;
@@ -964,6 +1087,9 @@ function drawGlobe() {
   bg.addColorStop(1,'#060c1a');
   ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
   ctx.fillStyle=bg; ctx.fill();
+
+  // continents
+  drawContinents(ctx, cx, cy, r);
 
   // lat/lng grid lines
   ctx.strokeStyle='rgba(41,98,255,0.12)'; ctx.lineWidth=0.5;
@@ -1054,7 +1180,7 @@ function setupGlobeEvents() {
   });
   window.addEventListener('mousemove', e=>{
     if (globeDrag) {
-      globeRotY += (e.clientX-globeLastX)*0.005;
+      globeRotY -= (e.clientX-globeLastX)*0.005;
       globeRotX += (e.clientY-globeLastY)*0.003;
       globeRotX = Math.max(-0.8,Math.min(0.8,globeRotX));
       globeLastX=e.clientX; globeLastY=e.clientY;
@@ -1079,7 +1205,7 @@ function setupGlobeEvents() {
   c.addEventListener('touchmove',e=>{
     e.preventDefault();
     if(!globeDrag) return;
-    globeRotY += (e.touches[0].clientX-globeLastX)*0.005;
+    globeRotY -= (e.touches[0].clientX-globeLastX)*0.005;
     globeRotX += (e.touches[0].clientY-globeLastY)*0.003;
     globeRotX = Math.max(-0.8,Math.min(0.8,globeRotX));
     globeLastX=e.touches[0].clientX; globeLastY=e.touches[0].clientY;
@@ -1112,38 +1238,131 @@ function selectMarket(id) {
    NICKNAME SCREEN
    ============================================================ */
 function showNicknameScreen() {
+  if (nickname) { startGame(null); return; }  // returning player skips nickname
   const gs=$('globeScreen'); if(gs) gs.classList.add('hidden');
   const ns=$('nicknameScreen'); if(ns) ns.classList.remove('hidden');
-  if (cancelAnimationFrame) cancelAnimationFrame(globeAnimId);
+  cancelAnimationFrame(globeAnimId);
 }
+
+/* ============================================================
+   MULTI-MARKET STATE (localStorage)
+   ============================================================ */
+function saveMarketState(mktId) {
+  const cur = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
+  const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
+  all[mktId] = {
+    cash: state.cash, shares: state.shares,
+    avgCost: state.avgCost, realizedPnl: state.realizedPnl,
+    lastPrice: cur, savedAt: Date.now()
+  };
+  localStorage.setItem('empire_mkt_states', JSON.stringify(all));
+}
+function loadMarketState(mktId) {
+  const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
+  return all[mktId] || null;
+}
+function clearMarketState(mktId) {
+  const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
+  delete all[mktId];
+  localStorage.setItem('empire_mkt_states', JSON.stringify(all));
+}
+
+let _gameInitialized = false;
 
 function startGame(loadedState) {
   const ns=$('nicknameScreen'); if(ns) ns.classList.add('hidden');
   const app=$('app'); if(app) app.classList.remove('hidden');
 
   ensurePlayerId();
-  applyMarket(selectedMkt);
 
   if (loadedState) {
-    // restore from data code
     selectedMkt = loadedState.m || selectedMkt;
-    applyMarket(selectedMkt);
+  }
+  applyMarket(selectedMkt);
+  initSyncedPrices(selectedMkt);   // seeded history
+
+  if (loadedState) {
     nickname = loadedState.n || nickname;
     state.cash        = loadedState.c || 10000;
     state.shares      = loadedState.s || 0;
     state.avgCost     = (loadedState.a||0) / 100;
     state.realizedPnl = loadedState.r || 0;
   } else {
-    resetGameState();
+    const saved = loadMarketState(selectedMkt);
+    if (saved) {
+      state.cash = saved.cash; state.shares = saved.shares;
+      state.avgCost = saved.avgCost; state.realizedPnl = saved.realizedPnl;
+    } else {
+      state.cash = 10000; state.shares = 0;
+      state.avgCost = 0;  state.realizedPnl = 0;
+    }
   }
+  state.pendingOrders = []; state.orderHistory = [];
+  state.forecastEvents= [];
 
   startBGM();
-  initFirebase();
-  setupLeaderboard();
-  warmup();
+  if (!_gameInitialized) { initFirebase(); setupLeaderboard(); }
   startTick();
-  setupChartGesture();
-  setupIndicatorUI();
+  if (!_gameInitialized) {
+    _gameInitialized = true;
+    setupChartGesture();
+    setupIndicatorUI();
+  }
+  maybeUpdatePanel(true);
+}
+
+/* ============================================================
+   RETURN TO GLOBE
+   ============================================================ */
+function returnToGlobe() {
+  saveMarketState(selectedMkt);
+  if (_tickInterval) { clearInterval(_tickInterval); _tickInterval = null; }
+  priceRng = null;
+  cancelAnimationFrame(globeAnimId);
+  $('app').classList.add('hidden');
+  $('globeScreen').classList.remove('hidden');
+  selectMarket(selectedMkt);
+  animateGlobe();
+}
+
+/* ============================================================
+   PORTFOLIO OVERVIEW
+   ============================================================ */
+function updatePortfolioUI() {
+  const list = $('portfolioList'); if(!list) return;
+  const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
+  // merge live state for current market
+  const cur = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
+  all[selectedMkt] = {
+    cash:state.cash, shares:state.shares, avgCost:state.avgCost,
+    realizedPnl:state.realizedPnl, lastPrice:cur
+  };
+  let totalEq = 0, html = '';
+  MARKET_LIST.forEach(id => {
+    const m  = MARKETS[id];
+    const ms = all[id];
+    if (!ms) {
+      html += `<div class="pfRow"><span class="pfMkt" style="color:${m.color}">${m.name}</span><span class="pfVal pfDim">尚未進入</span></div>`;
+      return;
+    }
+    const price  = ms.lastPrice || m.base;
+    const equity = ms.cash + ms.shares * price;
+    totalEq += equity;
+    const pnlPct = ((equity/10000-1)*100).toFixed(1);
+    const cls = equity>10000?'up':equity<9999?'down':'';
+    html += `<div class="pfRow">
+      <div class="pfLeft">
+        <span class="pfMkt" style="color:${m.color}">${m.name}</span>
+        <span class="pfSub">${ms.shares>0?ms.shares+'股 @ '+ms.avgCost.toFixed(2):'空倉'}</span>
+      </div>
+      <div class="pfRight">
+        <span class="pfVal ${cls}">${fmt(equity)}</span>
+        <span class="pfPct ${cls}">${equity>=10000?'+':''}${pnlPct}%</span>
+      </div>
+    </div>`;
+  });
+  list.innerHTML = html;
+  const tEl = $('portfolioTotal'); if(tEl) tEl.textContent = fmt(totalEq);
 }
 
 /* ============================================================
@@ -1162,12 +1381,20 @@ function showDataCode() {
    WARMUP + TICK
    ============================================================ */
 let _tickInterval = null;
+let _lastAbsTick  = 0;
+
 function warmup() {
-  for (let i=0;i<600;i++) nextPrice(true);
+  initSyncedPrices(selectedMkt);
 }
 function startTick() {
   if (_tickInterval) clearInterval(_tickInterval);
-  _tickInterval = setInterval(tick, TICK_MS);
+  _lastAbsTick = Math.floor((Date.now() % SYNC_DAY_MS) / TICK_MS);
+  _tickInterval = setInterval(() => {
+    const nowAbs = Math.floor((Date.now() % SYNC_DAY_MS) / TICK_MS);
+    const missed = Math.min(nowAbs - _lastAbsTick, 5);
+    for (let i = 0; i < missed; i++) tick();
+    _lastAbsTick = nowAbs;
+  }, TICK_MS);
 }
 
 /* ============================================================
@@ -1236,6 +1463,10 @@ function init() {
   if (muteBtn) muteBtn.addEventListener('click', toggleMute);
   const lbBtn = $('leaderboardBtn');
   if (lbBtn) lbBtn.addEventListener('click',()=>{ openOverlay('leaderboardOverlay'); playSfx('click'); });
+  const backBtn = $('backGlobeBtn');
+  if (backBtn) backBtn.addEventListener('click',()=>{ returnToGlobe(); playSfx('click'); });
+  const pfBtn = $('portfolioBtn');
+  if (pfBtn) pfBtn.addEventListener('click',()=>{ updatePortfolioUI(); openOverlay('portfolioOverlay'); playSfx('click'); });
 
   // Close overlays
   document.querySelectorAll('.overlayClose').forEach(b => {
@@ -1327,10 +1558,12 @@ function init() {
   const rb=$('restartBtn');
   if (rb) rb.addEventListener('click',()=>{
     clearInterval(_tickInterval); _tickInterval=null;
-    resetGameState();
+    clearMarketState(selectedMkt);
+    state.cash=10000; state.shares=0; state.avgCost=0; state.realizedPnl=0;
+    state.pendingOrders=[]; state.orderHistory=[]; state.forecastEvents=[];
     $('winScreen').classList.add('hidden');
     LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0;
-    warmup(); startTick(); maybeUpdatePanel(true);
+    initSyncedPrices(selectedMkt); startTick(); maybeUpdatePanel(true);
   });
 
   // Data code
