@@ -36,7 +36,7 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   width: 100%; height: 100%;
   max-width: 480px; margin: 0 auto;
   display: flex; flex-direction: column;
-  gap: 6px; padding: 8px; position: relative; overflow: hidden;
+  gap: 6px; padding: 8px 8px 0; position: relative; overflow: hidden;
 }
 
 /* ============================================================
@@ -218,9 +218,9 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   border-radius: 5px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
 }
-.posMainLeft { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
-.posMainRight { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; min-width: 110px; }
-.posPriceRow { display: flex; align-items: baseline; gap: 8px; }
+.posMainLeft { flex: 1; display: flex; flex-direction: column; justify-content: flex-start; gap: 4px; }
+.posMainRight { display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-start; gap: 4px; min-width: 110px; }
+.posPriceRow { display: flex; flex-direction: column; gap: 2px; }
 .posValue { font-size: 24px; font-weight: 700; color: var(--text); line-height: 1; }
 .posValue.tick-up { color: var(--up); animation: tickFlash .3s ease; }
 .posValue.tick-down { color: var(--down); animation: tickFlash .3s ease; }
@@ -559,21 +559,25 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
    LOG PANEL (分頁 + 可展開)
    ============================================================ */
 #logPanel {
-  background: var(--panel); border: 1px solid var(--border-2); border-radius: 6px;
-  flex-shrink: 0;
+  /* 底部抽屜：absolute 在 #app 內，不影響其他面板 */
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 244px;
+  background: var(--panel);
+  border: 1px solid var(--border-3);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
   display: flex; flex-direction: column;
   overflow: hidden;
+  z-index: 50;
+  /* collapsed 預設：只露 38px header peek，其餘推到 #app 下方（overflow:hidden 裁切）*/
+  transform: translateY(calc(100% - 38px));
+  transition: transform 0.32s cubic-bezier(0.15, 0.8, 0.25, 1);
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
 }
-#logPanel.collapsed { max-height: 38px; }
 #logPanel.expanded {
-  position: fixed;
-  bottom: 0; left: 50%; transform: translateX(-50%);
-  width: min(480px, 100vw);
-  height: 220px; max-height: none;
-  z-index: 100;
-  border-radius: 8px 8px 0 0; border-bottom: none;
-  border-color: var(--border-3);
-  box-shadow: 0 -6px 32px rgba(0,0,0,0.75), 0 0 24px rgba(41,98,255,0.10);
+  transform: translateY(0);
+  box-shadow: 0 -6px 32px rgba(0,0,0,0.7), 0 0 24px rgba(41,98,255,0.08);
 }
 .logHeader {
   display: flex; align-items: stretch;

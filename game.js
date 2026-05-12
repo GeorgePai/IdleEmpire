@@ -830,6 +830,21 @@ function playSfx(kind) {
     [700, 900, 1100, 1320].forEach((f, i) => beep(f, 0.06, now + i*0.05, 0.22));
   } else if (kind === 'news') {
     beep(330, 0.10, now, 0.18, 'triangle'); beep(440, 0.08, now + 0.08, 0.16, 'triangle');
+  } else if (kind === 'pageFlip') {
+    try {
+      const sr = audioCtx.sampleRate;
+      const bufLen = Math.ceil(sr * 0.16);
+      const buf = audioCtx.createBuffer(1, bufLen, sr);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < bufLen; i++)
+        d[i] = (Math.random()*2-1) * Math.pow(1 - i/bufLen, 1.3);
+      const src = audioCtx.createBufferSource(); src.buffer = buf;
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = 3800; bp.Q.value = 0.35;
+      const g2 = audioCtx.createGain(); g2.gain.setValueAtTime(0.09, now);
+      src.connect(bp); bp.connect(g2); g2.connect(audioCtx.destination);
+      src.start(now);
+    } catch(e) {}
   } else if (kind === 'panelTick') {
     beep(1600, 0.015, now, 0.006);
   } else if (kind === 'click') {
@@ -1115,7 +1130,7 @@ function init() {
     state.logExpanded = !state.logExpanded;
     $('logPanel').classList.toggle('expanded', state.logExpanded);
     $('logPanel').classList.toggle('collapsed', !state.logExpanded);
-    playSfx('click');
+    playSfx('pageFlip');
   };
 
   window.addEventListener('keydown', (e) => {
