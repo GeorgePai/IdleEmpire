@@ -218,6 +218,7 @@ let state = {
 function applyMarket(mktId) {
   const m = MARKETS[mktId] || MARKETS.empire;
   selectedMkt = mktId;
+  const bn=$('brandName'); if(bn) bn.textContent = m.name || 'EPC';
   state.sigma         = m.sigma;
   state.drift         = m.drift;
   state.basePrice     = m.base;
@@ -665,7 +666,8 @@ function getQty() {
   const p = state.tradingMode==='limit' ? (parseFloat($('limitPriceInput')?.value)||currentPrice()) : currentPrice();
   if (state.qtyMode==='max') return Math.floor(state.cash/p);
   const raw = parseInt($('qtyInput')?.value,10);
-  return Math.max(1, isNaN(raw)?0:raw);
+  if (isNaN(raw)) return typeof state.qtyMode==='number' ? state.qtyMode : 1;
+  return Math.max(1, raw);
 }
 
 function executeMarketBuy(qty, p) {
@@ -1144,10 +1146,15 @@ function drawGlobe() {
     ctx.fillStyle = m.color; ctx.fill();
     ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
 
-    // label
+    // label – offset if another dot is close
     ctx.fillStyle='#fff'; ctx.font=`bold ${isHover?12:10}px Inter,sans-serif`;
     ctx.textAlign='center';
-    ctx.fillText(m.name, pt.sx, pt.sy - dotR - 4);
+    const others = hitAreas; // already-drawn dots
+    let labelY = pt.sy - dotR - 4;
+    for (const h of others) {
+      if (Math.hypot(h.sx - pt.sx, h.sy - pt.sy) < 30) { labelY = pt.sy + dotR + 12; break; }
+    }
+    ctx.fillText(m.name, pt.sx, labelY);
 
     hitAreas.push({ id, sx:pt.sx, sy:pt.sy, r:dotR+8 });
   });
@@ -1271,6 +1278,7 @@ let _gameInitialized = false;
 
 function startGame(loadedState) {
   const ns=$('nicknameScreen'); if(ns) ns.classList.add('hidden');
+  const gs=$('globeScreen'); if(gs) gs.classList.add('hidden');
   const app=$('app'); if(app) app.classList.remove('hidden');
 
   ensurePlayerId();
