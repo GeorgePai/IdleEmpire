@@ -1010,9 +1010,6 @@ function drawGlobe() {
     const dotR = isHover ? 8 : 5;
 
     // glow
-    const glow = ctx.createRadialGradient(pt.sx,pt.sy,0,pt.sx,pt.sy,dotR*3);
-    glow.addColorStop(0, m.color.replace(')',',0.6)').replace('rgb','rgba').replace('#','rgba(').replace(/([0-9a-f]{2})/gi,(m2)=>parseInt(m2,16)+','));
-    // simpler glow:
     ctx.beginPath(); ctx.arc(pt.sx,pt.sy,dotR*3,0,Math.PI*2);
     ctx.fillStyle = m.color + '33'; ctx.fill();
 
@@ -1038,7 +1035,7 @@ function animateGlobe() {
     globeRotX += globeSpinX * 0.1;
     globeRotX = Math.max(-0.6, Math.min(0.6, globeRotX));
   }
-  drawGlobe();
+  try { drawGlobe(); } catch(e) { console.error('drawGlobe err:', e); }
   globeAnimId = requestAnimationFrame(animateGlobe);
 }
 

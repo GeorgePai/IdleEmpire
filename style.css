@@ -679,7 +679,7 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 }
 
 .globeSub {
-  position: absolute; top: 62px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: 72px; left: 50%; transform: translateX(-50%);
   font-family: 'Noto Sans TC', sans-serif; font-size: 12px;
   letter-spacing: 3px; color: var(--text-dim);
   pointer-events: none; white-space: nowrap;
