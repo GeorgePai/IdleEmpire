@@ -324,16 +324,19 @@ function maybeUpdatePanel(force = false) {
     const market = cur * state.shares;
     const pnlAmt = market - cost;
     const pnlPct = (pnlAmt / Math.max(0.001, cost)) * 100;
-    unrealPctEl.textContent = (pnlPct >= 0 ? '+' : '') + pnlPct.toFixed(2) + '%';
-    unrealPctEl.className = 'posPnl ' + (pnlPct > 0.01 ? 'up' : pnlPct < -0.01 ? 'down' : 'flat');
-    unrealAmtEl.textContent = (pnlAmt >= 0 ? '+' : '') + pnlAmt.toFixed(2);
-    unrealAmtEl.className = 'posTick ' + (pnlAmt >= 0 ? 'up' : 'down');
+    const sign = pnlAmt >= 0 ? '+' : '';
+    // 大字：金額
+    unrealAmtEl.textContent = sign + fmt(pnlAmt);
+    unrealAmtEl.className = 'posPnl ' + (pnlAmt > 0.01 ? 'up' : pnlAmt < -0.01 ? 'down' : 'flat');
+    // 小字：百分比
+    unrealPctEl.textContent = sign + pnlPct.toFixed(2) + '%';
+    unrealPctEl.className = 'posTick ' + (pnlPct > 0.01 ? 'up' : pnlPct < -0.01 ? 'down' : '');
   } else {
     unrealLabelEl.textContent = '空倉';
-    unrealPctEl.textContent = '--';
-    unrealPctEl.className = 'posPnl flat';
-    unrealAmtEl.textContent = '';
-    unrealAmtEl.className = 'posTick';
+    unrealAmtEl.textContent = '--';
+    unrealAmtEl.className = 'posPnl flat';
+    unrealPctEl.textContent = '';
+    unrealPctEl.className = 'posTick';
   }
 
   const goalPct = Math.min(100, equity / WIN_TARGET * 100);

@@ -559,24 +559,19 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
    LOG PANEL (分頁 + 可展開)
    ============================================================ */
 #logPanel {
-  /* 底部抽屜：absolute 在 #app 內，不影響其他面板 */
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 244px;
+  /* flex item：高度動畫，不覆蓋買賣按鈕 */
   background: var(--panel);
   border: 1px solid var(--border-3);
-  border-bottom: none;
   border-radius: 8px 8px 0 0;
   display: flex; flex-direction: column;
   overflow: hidden;
-  z-index: 50;
-  /* collapsed 預設：只露 38px header peek，其餘推到 #app 下方（overflow:hidden 裁切）*/
-  transform: translateY(calc(100% - 38px));
-  transition: transform 0.32s cubic-bezier(0.15, 0.8, 0.25, 1);
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+  flex-shrink: 0;
+  height: 38px;   /* collapsed：只露 header */
+  transition: height 0.32s cubic-bezier(0.15, 0.8, 0.25, 1);
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
 }
 #logPanel.expanded {
-  transform: translateY(0);
+  height: 220px;
   box-shadow: 0 -6px 32px rgba(0,0,0,0.7), 0 0 24px rgba(41,98,255,0.08);
 }
 .logHeader {
