@@ -218,7 +218,7 @@ let state = {
 function applyMarket(mktId) {
   const m = MARKETS[mktId] || MARKETS.empire;
   selectedMkt = mktId;
-  const bn=$('brandName'); if(bn) bn.textContent = m.name || 'EPC';
+  const bn=document.querySelector('.brandName'); if(bn) bn.textContent = m.name || 'EPC';
   state.sigma         = m.sigma;
   state.drift         = m.drift;
   state.basePrice     = m.base;
