@@ -1,1139 +1,1357 @@
-(() => {
+
+(function () {
 'use strict';
+
 /* ============================================================
-   EMPIRE INDEX v0.6 — PULSE BUILD
-   時間單位設計：5 真實秒 = 1 PULSE (遊戲日)
+   FIREBASE
    ============================================================ */
-const TICK_MS = 1_000;
-const SUBTICK_MS = 60;
-const PANEL_UPDATE_MS = 2500;
-const INITIAL_CASH = 10_000;
-const WIN_TARGET = 50_000;
-const VISIBLE_CANDLES_BASE = 40;
-const TOTAL_HISTORY = 1800;
-const DRIFT = 0.0004;
-const VOL = 0.014;
-const NEWS_PROB = 0.012;        // 普通即時新聞
-const FORECAST_PROB = 0.008;    // 預告事件
-const FORECAST_MIN_LEAD = 5;    // 提前 5 Pulse 預告
-const FORECAST_MAX_LEAD = 18;   // 最多 18 Pulse
-const PULSE_PER_TICK = 0.2;     // 1 tick = 0.2 pulse → 5 ticks = 1 pulse
+const FB_CFG = {
+  apiKey: "AIzaSyDaMkDm2G-4xYZbfPELXIuYiUXIGJI7c9E",
+  authDomain: "paigame.firebaseapp.com",
+  databaseURL: "https://paigame-default-rtdb.firebaseio.com",
+  projectId: "paigame",
+  appId: "1:402951779833:web:14ca7cfe3ee6495f5e7928",
+};
+let db = null;
+function initFirebase() {
+  try { firebase.initializeApp(FB_CFG); db = firebase.database(); }
+  catch(e) { console.warn('Firebase:', e); }
+}
 
-/* ============== 新聞庫：10 利多 + 10 利空 ============== */
-const NEWS_GOOD = [
-  '機構買家連續吸籌，鏈上巨鯨地址增加 18%',
-  'Empire DAO 通過治理提案，代幣銷毀啟動',
-  'Vela 央行降息 0.5%，市場流動性提升',
-  '主流交易所宣布 EPC 零手續費活動',
-  'Layer-2 主網升級完成，TPS 提升 10 倍',
-  '監管機構正式核准 EPC 現貨 ETF 上市',
-  'Sora 鏈日活突破歷史新高，創 240 萬地址',
-  'Phantom Capital 公開五億美元做多倉位',
-  '跨鏈橋資金流入連續 7 天創新高',
-  '機構支付方案上線，EPC 接入百萬商戶',
-];
-const NEWS_BAD = [
-  '監管機構展開反洗錢調查，多家交易所配合',
-  '巨鯨地址連續減倉，鏈上資金外流加速',
-  'Vela 央行緊急升息 0.75%，市場流動性收緊',
-  '主要交易所暫停 EPC 提現，社群恐慌升溫',
-  'Sora 鏈遭遇駭客攻擊，損失估計 8000 萬',
-  '監管草案禁止零售投資人持有 EPC',
-  'Phantom Capital 拋售 70% 持倉，引發踩踏',
-  '法人連續 5 天減倉，做空訂單激增 200%',
-  '穩定幣脫鉤事件波及，市場連鎖賣壓',
-  '日活地址跌至 60 天新低，鏈上活躍度疲弱',
-];
+/* ============================================================
+   PLAYER SESSION
+   ============================================================ */
+let playerId    = localStorage.getItem('empire_pid') || null;
+let nickname    = localStorage.getItem('empire_nick') || '';
+let lastSyncEq  = 0;
+let selectedMkt = 'empire';
 
-/* ============== 預告事件庫 ============== */
-const FORECAST_GOOD = [
-  { text: 'Empire DAO 將公布主網升級結果',          impact: '預期：成功則市場樂觀'    },
-  { text: 'Vela 央行召開貨幣政策會議',                impact: '預期：降息可能'           },
-  { text: '機構 ETF 申請審查截止',                    impact: '預期：核准利多'           },
-  { text: '主流交易所將上線新交易對',                  impact: '預期：流動性提升'         },
-  { text: 'Layer-2 主網切換窗口',                     impact: '預期：技術利多'           },
-  { text: '機構財報日，預期亮眼',                      impact: '預期：盈餘驚喜'           },
-  { text: '半年度代幣銷毀執行',                        impact: '預期：通縮利多'           },
-  { text: '監管框架草案公布',                          impact: '預期：合規利多'           },
-  { text: 'Empire 鏈生態大會，重磅嘉賓出席',          impact: '預期：消息利多'           },
-  { text: '社群提案投票結果公布',                      impact: '預期：通過可能性高'       },
-];
-const FORECAST_BAD = [
-  { text: '監管聽證會召開，議題敏感',                  impact: '預期：政策利空'           },
-  { text: '大量代幣解禁釋出',                          impact: '預期：賣壓增加'           },
-  { text: 'Vela 央行升息會議',                          impact: '預期：流動性收緊'         },
-  { text: '主要法人鎖倉期屆滿',                        impact: '預期：減倉壓力'           },
-  { text: '稅務改革草案二讀',                          impact: '預期：報稅利空'           },
-  { text: '反洗錢調查中期報告',                        impact: '預期：監管利空'           },
-  { text: '宏觀數據公布日，市場敏感',                   impact: '預期：波動加大'           },
-  { text: '主要交易所合規審查截止',                    impact: '預期：可能下架部分代幣'   },
-  { text: '做空機構公布研究報告',                      impact: '預期：估值質疑'           },
-  { text: '司法部訴訟結果宣判日',                      impact: '預期：壞消息可能'         },
-];
+function ensurePlayerId() {
+  if (!playerId) {
+    playerId = 'p' + Math.random().toString(36).slice(2,9) + Date.now().toString(36);
+    localStorage.setItem('empire_pid', playerId);
+  }
+  return playerId;
+}
 
-const state = {
-  prices: [],
-  basePrice: 100, tick: 0, trend: 0, trendTicks: 0,
-  startTime: Date.now(),
-  cash: INITIAL_CASH, shares: 0, avgCost: 0,
-  trades: 0, won: false,
-  qtyMode: '100', muted: false,
-  displayPrice: 100, flashUntil: 0,
-
-  candlePeriod: 5,
-  ma1Period: 5, ma1On: true,
-  ma2Period: 20, ma2On: true,
-
-  viewOffset: 0,
-  yScaleMult: 1,
-
-  lastPanelUpdate: 0,
-  shownPrice: 100,
-
-  tradingMode: 'market',
-  pendingOrders: [],
-  executedHistory: [],
-  realizedPnl: 0,
-  nextOrderId: 1,
-
-  // 預告事件
-  upcomingEvents: [],   // [{id, announcedPulse, executePulse, type, text, impact}]
-  pastEvents: [],       // 同上 + executed=true
-
-  // log
-  logEntries: { all: [], trade: [], news: [] },
-  logTab: 'all',
-  logExpanded: false,
-
-  started: false,       // splash 結束才開始
+/* ============================================================
+   MARKETS
+   ============================================================ */
+const MARKETS = {
+  empire: {
+    id:'empire', name:'Empire 幣', sub:'全球虛擬指數', color:'#2962ff',
+    lat:0, lng:0, sigma:0.008, drift:0.0001, base:100,
+    blackSwan:0.008, meanRev:0,
+    news:{
+      good:['機構投資者大量買入 Empire，信心回升',
+            '監管機構對 Empire 生態表示正面態度',
+            'Empire 鏈日交易量創歷史新高',
+            '知名基金宣布重倉 Empire',
+            'Empire 協議升級完成，手續費大幅降低',
+            '全球最大交易所宣布上架 Empire',
+            '頂尖分析師上調 Empire 目標價',
+            '跨鏈橋接成功，帶動生態流動性'],
+      bad:['Empire 鏈異常交易引發市場擔憂',
+           '監管機構傳出將對 Empire 展開調查',
+           '大型持倉方被傳出正在出貨',
+           'Empire 協議出現漏洞，官方緊急修補',
+           '市場情緒轉差，拋壓明顯上升',
+           '礦工收益下滑，算力撤出市場',
+           '競爭公鏈吸走大量生態資金',
+           '高槓桿多頭遭清算，帶動急跌']
+    },
+    forecast:{
+      good:['機構大單預計 {N} 天後進場','協議升級 {N} 天後上線','重大合作 {N} 天後公布','KOL 喊單活動定於 {N} 天後'],
+      bad:['解鎖壓力 {N} 天後到來','監管聽證 {N} 天後舉行','競品發布計劃於 {N} 天後','大規模清算預警 {N} 天後']
+    }
+  },
+  tokyo: {
+    id:'tokyo', name:'東京 ETF', sub:'日本股市指數', color:'#ff6b6b',
+    lat:35.7, lng:139.7, sigma:0.004, drift:0.00005, base:3200,
+    blackSwan:0.003, meanRev:0.2,
+    news:{
+      good:['日本央行維持寬鬆，日股受提振',
+            '出口數據優於預期，製造業信心回升',
+            '日圓適度走弱，帶動出口類股',
+            '半導體供應鏈回穩，科技股受益',
+            '外資連續買超日股',
+            '日本企業財報全面超越預期'],
+      bad:['日圓急升壓縮出口企業獲利',
+           '日本 GDP 數據低於市場預期',
+           '中日貿易摩擦升溫',
+           '日股技術面出現高點反轉信號',
+           '機構法人大規模調節日股',
+           '通縮疑慮再現，市場信心受損']
+    },
+    forecast:{
+      good:['日銀政策會議 {N} 天後召開，預期利多','出口數據 {N} 天後公布，機構樂觀','外資 {N} 天後大量匯入日股','科技財報 {N} 天後出爐'],
+      bad:['日銀 {N} 天後升息，注意衝擊','貿易數據 {N} 天後恐低於預期','機構 {N} 天後降評日股','獲利回吐 {N} 天後釋放']
+    }
+  },
+  brazil: {
+    id:'brazil', name:'聖保羅 BRZ', sub:'巴西高波動市場', color:'#51cf66',
+    lat:-23.5, lng:-46.6, sigma:0.015, drift:0.0002, base:50,
+    blackSwan:0.015, meanRev:0,
+    news:{
+      good:['巴西原物料出口量創新高','央行意外降息，刺激資金進場',
+            '農業豐收預期提振 BRZ','外資大舉流入新興市場',
+            '石油巨頭業績爆表，帶動大盤飆升',
+            '巴西幣穩定，外資信心增強'],
+      bad:['政治不穩定性上升，投資人恐慌',
+           '巴西雷亞爾急貶，外資撤離',
+           '通膨超預期，央行鷹派發言衝擊市場',
+           '財政赤字數據遠超預期',
+           '大宗商品暴跌拖累指數',
+           '政府政策急轉彎引發拋售潮']
+    },
+    forecast:{
+      good:['大宗商品數據 {N} 天後公布','央行轉向信號 {N} 天後釋出','巴西豐收報告 {N} 天後出爐','外資投入 {N} 天後到位'],
+      bad:['政治事件 {N} 天後發酵','通膨數據 {N} 天後偏高','財政報告 {N} 天後赤字超標','雷亞爾壓力 {N} 天後達頂']
+    }
+  },
+  riyadh: {
+    id:'riyadh', name:'利雅德 OIL', sub:'中東石油能源市場', color:'#ffd43b',
+    lat:24.7, lng:46.7, sigma:0.006, drift:0.0001, base:180,
+    blackSwan:0.020, meanRev:0.1,
+    news:{
+      good:['OPEC 宣布意外減產，油價急拉',
+            '沙烏地 GDP 強勁超越預期',
+            '利雅德 ETF 獲主權基金大量配置',
+            '油田新發現消息帶動資源類股大漲',
+            'Vision 2030 項目加速推進',
+            '中國石油需求超預期，帶動原油上漲'],
+      bad:['油價因需求疲弱急跌',
+           '地緣政治緊張衝擊中東市場',
+           'OPEC 成員國增產協議破局',
+           '美元走強壓縮石油美元收益',
+           '全球能源轉型加速，石油前景蒙陰',
+           '重要產油設施遭破壞，供應中斷']
+    },
+    forecast:{
+      good:['OPEC 會議 {N} 天後召開，預期減產','油田探勘結果 {N} 天後公布','主權基金 {N} 天後投入','能源峰會 {N} 天後帶動信心'],
+      bad:['美聯儲決策 {N} 天後打壓油價','OPEC 增產談判 {N} 天後破裂','中東緊張 {N} 天後升級','替代能源政策 {N} 天後生效']
+    }
+  },
+  seoul: {
+    id:'seoul', name:'首爾 K-TECH', sub:'韓國科技成長股', color:'#cc5de8',
+    lat:37.6, lng:126.9, sigma:0.010, drift:0.0003, base:75,
+    blackSwan:0.012, meanRev:0,
+    news:{
+      good:['韓國半導體出口大幅成長，科技股帶頭上衝',
+            '三星、SK 海力士業績雙雙爆表',
+            '韓流文化產業帶動科技股飆漲',
+            'K-TECH 指數獲外資瘋狂追捧',
+            '韓國政府宣布大規模科技補貼',
+            '全球 AI 需求旺盛，帶動韓國晶片股'],
+      bad:['韓元急貶，外資撤出',
+           '北韓局勢緊張，避險情緒升溫',
+           '中韓貿易摩擦衝擊電子出口',
+           '科技股估值過高，主力開始調節',
+           '韓國 GDP 數據不如預期',
+           '晶片市場供應過剩，庫存創新高']
+    },
+    forecast:{
+      good:['科技財報 {N} 天後公布，預期爆表','科技補貼計劃 {N} 天後宣布','晶片旺季 {N} 天後到來','外資 {N} 天後大買超'],
+      bad:['地緣政治 {N} 天後激化','科技股解鎖期 {N} 天後到來','主力調節 {N} 天後啟動','半導體庫存數據 {N} 天後出爐']
+    }
+  }
 };
 
-/* ============== Pulse 換算 ============== */
-function currentPulse() { return Math.floor(state.tick * PULSE_PER_TICK); }
-function pulseStr(p) { return 'DAY ' + String(p).padStart(4, '0'); }
+/* ============================================================
+   DATA CODE (XOR + Base64 加密存檔)
+   ============================================================ */
+const CKEY = [83,121,197,43,167,11,251,89,137,53,223,71,179,37,241,101,
+              61,233,17,149,97,211,7,163,131,47,199,73,229,113,31,191];
 
-let bgm = null;
-const AudioCtx = window.AudioContext || window.webkitAudioContext;
-const audioCtx = AudioCtx ? new AudioCtx() : null;
-
-function gauss() {
-  let u = 0, v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-function nextPrice(suppressNews = false) {
-  if (state.trendTicks > 0) { state.trendTicks--; if (state.trendTicks === 0) state.trend = 0; }
-  else if (Math.random() < 0.01) {
-    state.trend = (Math.random() < 0.5 ? -1 : 1) * (0.002 + Math.random()*0.005);
-    state.trendTicks = 30 + Math.floor(Math.random()*60);
-  }
-  const last = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
-  let mu = DRIFT + state.trend;
-  let sig = VOL;
-  let event = null, kind = null;
-  if (!suppressNews && Math.random() < NEWS_PROB) {
-    const good = Math.random() < 0.5;
-    mu += good ? 0.015 : -0.015;
-    sig *= 1.5;
-    event = good ? NEWS_GOOD[Math.floor(Math.random()*NEWS_GOOD.length)]
-                 : NEWS_BAD[Math.floor(Math.random()*NEWS_BAD.length)];
-    kind = good ? 'news+' : 'news-';
-  }
-  const shock = gauss() * sig;
-  const p = Math.max(0.5, last * Math.exp(mu + shock));
-  const v = Math.round(800 + Math.random()*1600 + Math.abs(shock)*40000);
-  return { p, v, event, kind };
-}
-
-/* 預告事件 — 觸發已預告的事件造成衝擊 */
-function triggerForecastEvent(ev) {
-  const last = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
-  let mu, sig = 0.025;
-  if (ev.type === 'good') { mu = 0.06 + Math.random()*0.04; }
-  else { mu = -0.06 - Math.random()*0.04; }
-  const shock = gauss() * sig;
-  const p = Math.max(0.5, last * Math.exp(mu + shock));
-  const v = Math.round(3000 + Math.random()*5000);
-  state.prices.push({ t: state.tick, p, v });
-  if (state.prices.length > TOTAL_HISTORY) state.prices.shift();
-  state.displayPrice = state.displayPrice * 0.5 + p * 0.5;
-
-  ev.executed = true;
-  ev.actualPulse = currentPulse();
-  state.pastEvents.unshift(ev);
-  if (state.pastEvents.length > 80) state.pastEvents.pop();
-
-  log(`【事件觸發】${ev.text}`, 'event', 'news');
-  toast(`${ev.type === 'good' ? '利多' : '利空'}觸發：${ev.text}`, ev.type === 'good' ? 'surge' : 'crash', 3200);
-  playSfx(ev.type === 'good' ? 'surge' : 'crash');
-}
-
-/* 隨機產生預告事件 */
-function maybeAnnounceForecast() {
-  if (Math.random() >= FORECAST_PROB) return;
-  // 同時上限 5 件
-  if (state.upcomingEvents.length >= 5) return;
-  const good = Math.random() < 0.5;
-  const pool = good ? FORECAST_GOOD : FORECAST_BAD;
-  const pick = pool[Math.floor(Math.random()*pool.length)];
-  const lead = FORECAST_MIN_LEAD + Math.floor(Math.random() * (FORECAST_MAX_LEAD - FORECAST_MIN_LEAD));
-  const ev = {
-    id: 'ev' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-    type: good ? 'good' : 'bad',
-    text: pick.text,
-    impact: pick.impact,
-    announcedPulse: currentPulse(),
-    executePulse: currentPulse() + lead,
-    executed: false,
+function encodeGameState(st) {
+  const d = {
+    v:2, n:nickname.slice(0,20),
+    c:Math.round(st.cash), s:st.shares,
+    a:Math.round((st.avgCost||0)*100),
+    r:Math.round(st.realizedPnl),
+    m:selectedMkt, t:Date.now()
   };
-  state.upcomingEvents.push(ev);
-  log(`【預告】${lead} 天後：${ev.text}`, 'event', 'news');
-  toast(`預告：${lead} 天後 — ${ev.text}`, 'upcoming', 3200);
-  playSfx('news');
+  const bytes = new TextEncoder().encode(JSON.stringify(d));
+  let binary = '';
+  bytes.forEach((b,i) => binary += String.fromCharCode(b ^ CKEY[i % CKEY.length]));
+  const b64 = btoa(binary).replace(/\+/g,'8').replace(/\//g,'9').replace(/=/g,'0');
+  return 'EPC-' + (b64.match(/.{1,8}/g)||[]).join('-');
 }
 
-function tick() {
-  if (!state.started) return;
-  state.tick++;
-  const next = nextPrice();
-  state.prices.push({ t: state.tick, p: next.p, v: next.v });
-  if (state.prices.length > TOTAL_HISTORY) state.prices.shift();
-  if (next.event) {
-    log(next.event, 'news', 'news');
-    if (next.kind === 'news+') toast(next.event, 'surge', 2400);
-    else toast(next.event, 'crash', 2400);
-    playSfx('news');
-  }
-
-  // 預告事件觸發
-  const pulse = currentPulse();
-  const stillUpcoming = [];
-  for (const ev of state.upcomingEvents) {
-    if (ev.executePulse <= pulse) {
-      triggerForecastEvent(ev);
-    } else {
-      stillUpcoming.push(ev);
-    }
-  }
-  state.upcomingEvents = stillUpcoming;
-
-  // 新預告
-  maybeAnnounceForecast();
-
-  // 限價單檢查
-  checkPendingOrders(state.prices[state.prices.length-1].p);
-
-  // 日曆按鈕指示
-  $('calendarBtn').classList.toggle('has-upcoming', state.upcomingEvents.length > 0);
-
-  // pulse 標籤
-  $('pulseLabel').textContent = pulseStr(pulse);
-
-  checkWin();
+function decodeGameState(code) {
+  try {
+    if (!code.startsWith('EPC-')) return null;
+    const b64 = code.slice(4).replace(/-/g,'').replace(/8/g,'+').replace(/9/g,'/').replace(/0/g,'=');
+    const raw = atob(b64);
+    const bytes = Uint8Array.from(raw.split('').map(c => c.charCodeAt(0)));
+    const plain = new TextDecoder().decode(bytes.map((b,i) => b ^ CKEY[i % CKEY.length]));
+    return JSON.parse(plain);
+  } catch(e) { return null; }
 }
 
-/* ============== K-LINE ============== */
-function buildCandles(period) {
-  const ticksPerCandle = period;
-  const groups = new Map();
-  for (const td of state.prices) {
-    const groupIdx = Math.floor(td.t / ticksPerCandle);
-    if (!groups.has(groupIdx)) {
-      groups.set(groupIdx, { startTick: groupIdx * ticksPerCandle, o: td.p, h: td.p, l: td.p, c: td.p, v: td.v });
-    } else {
-      const g = groups.get(groupIdx);
-      g.h = Math.max(g.h, td.p); g.l = Math.min(g.l, td.p);
-      g.c = td.p; g.v += td.v;
-    }
-  }
-  const sorted = [...groups.entries()].sort((a, b) => a[0] - b[0]);
-  return sorted.map(([_, g]) => ({
-    ...g, startPulse: Math.floor(g.startTick * PULSE_PER_TICK),
-  }));
-}
-function maOnCandles(candles, period) {
-  const out = new Array(candles.length).fill(null);
-  for (let i = period - 1; i < candles.length; i++) {
-    let s = 0; for (let j = 0; j < period; j++) s += candles[i-j].c;
-    out[i] = s / period;
-  }
-  return out;
+/* ============================================================
+   CONSTANTS
+   ============================================================ */
+const TICK_MS          = 200;
+const PULSE_PER_TICK   = 0.2;
+const VISIBLE_CANDLES_BASE = 50;
+const WIN_TARGET       = 50000;
+const PANEL_UPDATE_MS  = 2500;
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let state = {
+  tick: 0, prices: [], pendingOrders: [], orderHistory: [],
+  cash: 10000, shares: 0, avgCost: 0, realizedPnl: 0,
+  candlePeriod: 5, viewOffset: 0, pinned: true,
+  ma1: 5, ma2: 20, ma1On: true, ma2On: true,
+  tradingMode: 'market', qtyMode: 100,
+  forecastEvents: [], logExpanded: false,
+  logTab: 'all', showVol: false,
+  // market
+  sigma: 0.008, drift: 0.0001, basePrice: 100,
+  blackSwanProb: 0.008, meanReversion: 0,
+  newsGood:[], newsBad:[], forecastGood:[], forecastBad:[],
+};
+
+function applyMarket(mktId) {
+  const m = MARKETS[mktId] || MARKETS.empire;
+  selectedMkt = mktId;
+  state.sigma         = m.sigma;
+  state.drift         = m.drift;
+  state.basePrice     = m.base;
+  state.blackSwanProb = m.blackSwan;
+  state.meanReversion = m.meanRev || 0;
+  state.newsGood      = m.news.good;
+  state.newsBad       = m.news.bad;
+  state.forecastGood  = m.forecast.good;
+  state.forecastBad   = m.forecast.bad;
 }
 
-const $ = (id) => document.getElementById(id);
+function resetGameState() {
+  const m = MARKETS[selectedMkt] || MARKETS.empire;
+  state = {
+    tick:0, prices:[], pendingOrders:[], orderHistory:[],
+    cash:10000, shares:0, avgCost:0, realizedPnl:0,
+    candlePeriod:5, viewOffset:0, pinned:true,
+    ma1:5, ma2:20, ma1On:true, ma2On:true,
+    tradingMode:'market', qtyMode:100,
+    forecastEvents:[], logExpanded:false, logTab:'all', showVol:false,
+    sigma:m.sigma, drift:m.drift, basePrice:m.base,
+    blackSwanProb:m.blackSwan, meanReversion:m.meanRev||0,
+    newsGood:m.news.good, newsBad:m.news.bad,
+    forecastGood:m.forecast.good, forecastBad:m.forecast.bad,
+  };
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+const $ = id => document.getElementById(id);
 function fmt(n) {
   if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2) + 'M';
   if (Math.abs(n) >= 1e4) return (n/1e3).toFixed(1) + 'K';
   return Math.round(n).toLocaleString();
 }
-
-function flashEl(id) {
-  const el = $(id); if (!el) return;
-  el.classList.remove('val-updated');
-  void el.offsetWidth;
-  el.classList.add('val-updated');
+function pulseStr(p) { return 'DAY ' + String(p).padStart(4,'0'); }
+function currentPulse() { return Math.floor(state.tick * PULSE_PER_TICK); }
+function toast(msg) {
+  const t = $('toast'); if (!t) return;
+  t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(t._tid); t._tid = setTimeout(() => t.classList.add('hidden'), 2200);
 }
 
-function maybeUpdatePanel(force = false) {
-  if (!state.prices.length) return;
+/* ============================================================
+   GBM ENGINE
+   ============================================================ */
+function gauss() {
+  let u=0,v=0;
+  while(u===0) u=Math.random();
+  while(v===0) v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function nextPrice(suppressNews) {
+  const last = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
+  let p = last;
+
+  // black swan
+  if (Math.random() < state.blackSwanProb / 5) {
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    p *= (1 + dir * (0.04 + Math.random()*0.05));
+  }
+
+  // mean reversion
+  if (state.meanReversion > 0) {
+    const mid = state.basePrice;
+    p += state.meanReversion * (mid - p) * 0.001;
+  }
+
+  // GBM
+  p *= Math.exp((state.drift - 0.5*state.sigma*state.sigma)*TICK_MS/1000
+                + state.sigma * gauss() * Math.sqrt(TICK_MS/1000));
+
+  p = Math.max(0.01, +p.toFixed(4));
+
+  // volume
+  const chgPct = Math.abs(p - last) / last;
+  const v = Math.round(800 + chgPct * 80000 + Math.random() * 500);
+
+  state.prices.push({ t: state.tick, p, v });
+  if (state.prices.length > 600) state.prices.shift();
+
+  if (!suppressNews) maybeAnnounceForecast();
+  return p;
+}
+
+function triggerForecastEvent(ev) {
+  const impact = ev.dir === 'good' ? (0.04 + Math.random()*0.04) : -(0.04 + Math.random()*0.04);
+  const last   = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
+  const bounces = 8;
+  for (let i=0; i<bounces; i++) {
+    const f = impact * (1 - i/(bounces+1)) + gauss()*state.sigma*0.5;
+    const p2 = Math.max(0.01, +(last*(1+f*(bounces-i)/bounces)).toFixed(4));
+    state.prices.push({ t: state.tick + i, p: p2, v: Math.round(2000+Math.random()*3000) });
+  }
+  const text = ev.dir==='good'
+    ? (state.newsGood[Math.floor(Math.random()*state.newsGood.length)]||'市場利好消息發酵')
+    : (state.newsBad[Math.floor(Math.random()*state.newsBad.length)]||'市場利空消息衝擊');
+  addLog(pulseStr(currentPulse()) + ' ' + text, 'news');
+  playSfx('news');
+}
+
+function maybeAnnounceForecast() {
+  if (Math.random() > 0.008) return;
+  if (state.forecastEvents.length >= 5) return;
+  const dir  = Math.random() < 0.5 ? 'good' : 'bad';
+  const lead = 5 + Math.floor(Math.random()*14);
+  const executePulse = currentPulse() + lead;
+  const pool  = dir==='good' ? state.forecastGood : state.forecastBad;
+  const tmpl  = pool[Math.floor(Math.random()*pool.length)] || '市場預告事件將在 {N} 天後發生';
+  const msg   = tmpl.replace('{N}', lead);
+  state.forecastEvents.push({ dir, executePulse, msg });
+  addLog('預告 ' + msg, 'event');
+  updateCalendarUI();
+}
+
+/* ============================================================
+   TICK
+   ============================================================ */
+function tick() {
+  state.tick++;
+  const p = nextPrice(false);
+
+  // forecast execution
+  const cp = currentPulse();
+  state.forecastEvents = state.forecastEvents.filter(ev => {
+    if (ev.executePulse <= cp) { triggerForecastEvent(ev); return false; }
+    return true;
+  });
+
+  checkPendingOrders(p);
+  maybeUpdatePanel();
+  updateCalendarUI();
+  $('pulseLabel').textContent = pulseStr(cp);
+
+  // Firebase sync every 50 ticks (~10s)
+  if (state.tick % 50 === 0) syncToFirebase();
+
+  drawChartArea();
+  renderLog();
+}
+
+/* ============================================================
+   CANDLES + MA
+   ============================================================ */
+function buildCandles(period) {
+  const tpc = period / (TICK_MS/1000);
+  const map = new Map();
+  for (const td of state.prices) {
+    const gi = Math.floor(td.t / tpc);
+    if (!map.has(gi)) map.set(gi, { o:td.p, h:td.p, l:td.p, c:td.p, v:td.v, startTick:td.t });
+    const g = map.get(gi);
+    g.h = Math.max(g.h, td.p); g.l = Math.min(g.l, td.p); g.c = td.p; g.v += td.v;
+  }
+  return [...map.values()].map(g => ({
+    ...g, startPulse: Math.floor(g.startTick * PULSE_PER_TICK)
+  }));
+}
+
+function maOnCandles(candles, period) {
+  return candles.map((_,i,a) => {
+    if (i < period-1) return null;
+    return a.slice(i-period+1, i+1).reduce((s,k) => s+k.c, 0) / period;
+  });
+}
+
+/* ============================================================
+   PANEL UPDATE
+   ============================================================ */
+let _lastPanel = 0;
+function flashEl(id) {
+  const el = $(id); if (!el) return;
+  el.classList.remove('val-updated'); void el.offsetWidth; el.classList.add('val-updated');
+}
+
+function maybeUpdatePanel(force) {
   const now = performance.now();
-  if (!force && now - state.lastPanelUpdate < PANEL_UPDATE_MS) return;
-  state.lastPanelUpdate = now;
+  if (!force && now - _lastPanel < PANEL_UPDATE_MS) return;
+  _lastPanel = now;
+  const cur    = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
+  const priceEl  = $('priceNow');
+  const chgEl    = $('priceChange');
 
-  const cur = state.prices[state.prices.length - 1].p;
-  const prev = state.shownPrice;
-  const chg = cur - prev;
-  const chgPct = (chg / Math.max(0.01, prev)) * 100;
-
-  const priceEl = $('priceNow');
-  const oldVal = state.shownPrice;
-  state.shownPrice = cur;
-  priceEl.textContent = cur.toFixed(2);
-  priceEl.classList.remove('tick-up', 'tick-down');
-  void priceEl.offsetWidth;
-  if (cur > oldVal) priceEl.classList.add('tick-up');
-  else if (cur < oldVal) priceEl.classList.add('tick-down');
-
-  const chgEl = $('priceChange');
-  chgEl.textContent = `${chg >= 0 ? '+' : ''}${chg.toFixed(2)} (${chg >= 0 ? '+' : ''}${chgPct.toFixed(2)}%)`;
-  chgEl.className = 'posTick ' + (chg >= 0 ? 'up' : 'down');
-
-  $('cashLabel').textContent = fmt(state.cash);
-  $('sharesLabel').textContent = state.shares.toLocaleString();
-  $('avgCostLabel').textContent = state.shares > 0 ? state.avgCost.toFixed(2) : '--';
-
-  const realEl = $('realPnlLabel');
-  realEl.textContent = (state.realizedPnl >= 0 ? '+' : '') + fmt(state.realizedPnl);
-  realEl.className = 'posV ' + (state.realizedPnl > 0.01 ? 'up' : state.realizedPnl < -0.01 ? 'down' : '');
+  if (priceEl) {
+    const prev  = parseFloat(priceEl.dataset.prev || cur);
+    const chg   = cur - prev;
+    const chgPct = prev ? (chg/prev)*100 : 0;
+    priceEl.dataset.prev = cur;
+    priceEl.textContent  = cur.toFixed(2);
+    priceEl.className = 'posValue' + (chg>0?' up':chg<0?' down':'');
+    if (chgEl) {
+      chgEl.textContent = `${chg>=0?'+':''}${chg.toFixed(2)} (${chg>=0?'+':''}${chgPct.toFixed(2)}%)`;
+      chgEl.className   = 'posTick ' + (chg>0.001?'up':chg<-0.001?'down':'');
+    }
+  }
 
   const equity = state.cash + state.shares * cur;
-  $('equityLabel').textContent = fmt(equity);
-
-  // 數值更新動畫 + 音效
   ['cashLabel','sharesLabel','avgCostLabel','equityLabel','realPnlLabel'].forEach(flashEl);
   if (!force) playSfx('panelTick');
 
-  const unrealLabelEl = $('unrealPnlLabel');
-  const unrealPctEl = $('unrealPnlPct');
-  const unrealAmtEl = $('unrealPnlAmount');
+  $('cashLabel').textContent   = fmt(state.cash);
+  $('sharesLabel').textContent = state.shares.toLocaleString();
+  $('avgCostLabel').textContent = state.shares > 0 ? state.avgCost.toFixed(2) : '--';
+  const realEl = $('realPnlLabel');
+  if (realEl) {
+    realEl.textContent = (state.realizedPnl>=0?'+':'') + fmt(state.realizedPnl);
+    realEl.className = 'posV ' + (state.realizedPnl>0.5?'up':state.realizedPnl<-0.5?'down':'');
+  }
+  $('equityLabel').textContent = fmt(equity);
+
+  // unrealized PnL
+  const labelEl = $('unrealPnlLabel');
+  const amtEl   = $('unrealPnlAmount');
+  const pctEl   = $('unrealPnlPct');
   if (state.shares > 0) {
-    unrealLabelEl.textContent = '未實現';
-    const cost = state.avgCost * state.shares;
-    const market = cur * state.shares;
-    const pnlAmt = market - cost;
+    const cost   = state.avgCost * state.shares;
+    const mkt    = cur * state.shares;
+    const pnlAmt = mkt - cost;
     const pnlPct = (pnlAmt / Math.max(0.001, cost)) * 100;
-    const sign = pnlAmt >= 0 ? '+' : '';
-    // 大字：金額
-    unrealAmtEl.textContent = sign + fmt(pnlAmt);
-    unrealAmtEl.className = 'posPnl ' + (pnlAmt > 0.01 ? 'up' : pnlAmt < -0.01 ? 'down' : 'flat');
-    // 小字：百分比
-    unrealPctEl.textContent = sign + pnlPct.toFixed(2) + '%';
-    unrealPctEl.className = 'posTick ' + (pnlPct > 0.01 ? 'up' : pnlPct < -0.01 ? 'down' : '');
+    const sign   = pnlAmt >= 0 ? '+' : '';
+    if (labelEl) labelEl.textContent = '未實現';
+    if (amtEl) { amtEl.textContent = sign + fmt(pnlAmt); amtEl.className = 'posPnl '+(pnlAmt>0.01?'up':pnlAmt<-0.01?'down':'flat'); }
+    if (pctEl) { pctEl.textContent = sign + pnlPct.toFixed(2)+'%'; pctEl.className = 'posTick '+(pnlPct>0.01?'up':pnlPct<-0.01?'down':''); }
   } else {
-    unrealLabelEl.textContent = '空倉';
-    unrealAmtEl.textContent = '--';
-    unrealAmtEl.className = 'posPnl flat';
-    unrealPctEl.textContent = '';
-    unrealPctEl.className = 'posTick';
+    if (labelEl) labelEl.textContent = '空倉';
+    if (amtEl) { amtEl.textContent = '--'; amtEl.className = 'posPnl flat'; }
+    if (pctEl) { pctEl.textContent = ''; pctEl.className = 'posTick'; }
   }
 
   const goalPct = Math.min(100, equity / WIN_TARGET * 100);
-  $('goalProgress').style.width = goalPct + '%';
-  $('goalPctLabel').textContent = goalPct.toFixed(2) + '%';
-
+  const gp = $('goalProgress'); if (gp) gp.style.width = goalPct + '%';
+  const gl = $('goalPctLabel'); if (gl) gl.textContent = goalPct.toFixed(2) + '%';
+  if (state.showVol && state.prices.length)
+    { const vl=$('volNowLabel'); if(vl) vl.textContent=state.prices[state.prices.length-1].v.toLocaleString(); }
+  if (equity >= WIN_TARGET) showWin();
 }
 
-function subtick() {
-  if (state.prices.length === 0) return;
-  const target = state.prices[state.prices.length - 1].p;
-  const diff = target - state.displayPrice;
-  state.displayPrice += diff * 0.18;
-  state.displayPrice *= (1 + (Math.random() - 0.5) * 0.0004);
-  drawChartArea();
-  maybeUpdatePanel(false);
+/* ============================================================
+   CANVAS HELPERS
+   ============================================================ */
+function setCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = c.getBoundingClientRect();
+  const W = rect.width || c.offsetWidth || 300;
+  const H = rect.height || c.offsetHeight || 200;
+  c.width = W * dpr; c.height = H * dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, W, H };
 }
 
+/* ============================================================
+   CHART DRAWING
+   ============================================================ */
 function drawChartArea() {
-  if (!state.prices.length) return;
   drawCandleChart();
 }
 
-function setCanvas(c) {
-  const dpr = window.devicePixelRatio || 1;
-  const w = c.clientWidth, h = c.clientHeight;
-  if (c.width !== w * dpr || c.height !== h * dpr) {
-    c.width = w * dpr; c.height = h * dpr;
-  }
-  const ctx = c.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  return { ctx, W: w, H: h };
-}
+let _lastDrawW = 0, _lastDrawH = 0;
 
-/* ============== Candle Chart (升級網格) ============== */
 function drawCandleChart() {
-  const c = $('priceChart');
+  const c = $('priceChart'); if (!c) return;
   const { ctx, W, H } = setCanvas(c);
-  const allCandles = buildCandles(state.candlePeriod);
-  if (allCandles.length < 1) return;
+  if (!state.prices.length) return;
 
-  const N = VISIBLE_CANDLES_BASE;
-  const endIdx = Math.max(N, allCandles.length - state.viewOffset);
+  const all      = buildCandles(state.candlePeriod);
+  const N        = VISIBLE_CANDLES_BASE;
+  const totalC   = all.length;
+  const endIdx   = state.pinned ? totalC : Math.max(N, totalC - Math.round(state.viewOffset));
   const startIdx = Math.max(0, endIdx - N);
-  const candles = allCandles.slice(startIdx, endIdx);
-  if (candles.length < 1) return;
+  const candles  = all.slice(startIdx, endIdx);
+  if (candles.length < 2) return;
 
-  $('resetViewBtn').classList.toggle('hidden', state.viewOffset === 0);
+  const ma1 = maOnCandles(all, state.ma1).slice(startIdx, endIdx);
+  const ma2 = maOnCandles(all, state.ma2).slice(startIdx, endIdx);
 
-  const isLive = state.viewOffset === 0;
-  if (isLive) {
-    const last = candles[candles.length - 1];
-    const tweenedClose = state.displayPrice;
-    candles[candles.length - 1] = {
-      ...last, c: tweenedClose,
-      h: Math.max(last.h, tweenedClose),
-      l: Math.min(last.l, tweenedClose),
-    };
+  const vals = candles.flatMap(k=>[k.h,k.l]);
+  let lo=Math.min(...vals), hi=Math.max(...vals);
+  const pad = (hi-lo)*0.1 || 1; lo-=pad; hi+=pad;
+  const yScale = v => H - ((v-lo)/(hi-lo))*H;
+
+  // grid
+  ctx.clearRect(0,0,W,H);
+  const GRID_COLOR = 'rgba(255,255,255,0.04)';
+  for (let i=0;i<=4;i++) {
+    const y = H*i/4;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y);
+    ctx.strokeStyle=GRID_COLOR; ctx.lineWidth=1; ctx.stroke();
   }
 
-  const rawLo = Math.min(...candles.map(k => k.l));
-  const rawHi = Math.max(...candles.map(k => k.h));
-  const center = (rawLo + rawHi) / 2;
-  const half = (rawHi - rawLo) / 2;
-  const expandedHalf = Math.max(0.01, half * state.yScaleMult);
-  const lo = (center - expandedHalf) * 0.998;
-  const hi = (center + expandedHalf) * 1.002;
-
-  const padR = 50;
-  const chartW = W - padR;
-  const candleW = chartW / candles.length;
-  const bodyW = Math.max(2, candleW * 0.7);
-  const py = (p) => 12 + (H - 24) * (1 - (p - lo) / Math.max(0.001, (hi - lo)));
-
-  // 升級網格：主格線清晰 + 次格線細微
-  ctx.lineWidth = 1;
-  // 次水平格線（每 1/8）
-  ctx.strokeStyle = 'rgba(140,160,180,0.04)';
-  for (let g = 1; g < 8; g++) {
-    if (g % 2 === 0) continue;
-    const y = 12 + (H - 24) * g / 8;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
-  }
-  // 主水平格線（每 1/4）
-  ctx.strokeStyle = 'rgba(140,160,180,0.10)';
-  for (let g = 0; g <= 4; g++) {
-    const y = 12 + (H - 24) * g / 4;
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
-  }
-  // 主垂直格線（每 1/4）
-  ctx.strokeStyle = 'rgba(140,160,180,0.08)';
-  for (let g = 0; g <= 4; g++) {
-    const x = chartW * g / 4;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-  }
-  // 內框（更清晰外框）
-  ctx.strokeStyle = 'rgba(140,160,180,0.18)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(0.5, 0.5, chartW - 1, H - 1);
-
-  // 價格刻度
-  ctx.fillStyle = '#9faab8';
-  ctx.font = '10px JetBrains Mono';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  for (let g = 0; g <= 4; g++) {
-    const y = 12 + (H - 24) * g / 4;
-    const priceLabel = (hi - (hi - lo) * g / 4).toFixed(2);
-    ctx.fillText(priceLabel, chartW + 4, y);
+  // cost line
+  if (state.shares>0 && state.avgCost>0) {
+    const cy = yScale(state.avgCost);
+    ctx.beginPath(); ctx.moveTo(0,cy); ctx.lineTo(W,cy);
+    ctx.strokeStyle='rgba(240,185,11,0.6)'; ctx.lineWidth=1;
+    ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
   }
 
-  // K 線
-  for (let i = 0; i < candles.length; i++) {
-    const k = candles[i];
-    const cx = (i + 0.5) * candleW;
+  // pending limit lines
+  state.pendingOrders.forEach(o => {
+    const ly = yScale(o.limitPrice);
+    ctx.beginPath(); ctx.moveTo(0,ly); ctx.lineTo(W,ly);
+    ctx.strokeStyle = o.side==='buy' ? 'rgba(38,166,154,0.5)':'rgba(239,83,80,0.5)';
+    ctx.lineWidth=1; ctx.setLineDash([3,5]); ctx.stroke(); ctx.setLineDash([]);
+  });
+
+  // candles
+  const cw = W / candles.length;
+  const bw = Math.max(1, cw * 0.55);
+  candles.forEach((k,i) => {
     const up = k.c >= k.o;
-    const color = up ? '#26a69a' : '#ef5350';
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(cx, py(k.h));
-    ctx.lineTo(cx, py(k.l));
-    ctx.stroke();
-    const yTop = py(Math.max(k.o, k.c));
-    const yBot = py(Math.min(k.o, k.c));
-    const height = Math.max(1, yBot - yTop);
-    ctx.fillStyle = color;
-    ctx.fillRect(cx - bodyW/2, yTop, bodyW, height);
+    const col = up ? '#26a69a' : '#ef5350';
+    const x   = i * cw + cw/2;
+    ctx.strokeStyle = col; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, yScale(k.h)); ctx.lineTo(x, yScale(k.l)); ctx.stroke();
+    const oy = yScale(Math.max(k.o,k.c)), cy2 = Math.abs(yScale(k.o)-yScale(k.c)) || 1;
+    ctx.fillStyle = col;
+    ctx.fillRect(x - bw/2, oy, bw, cy2);
+  });
+
+  // MA lines
+  function drawMa(arr, color) {
+    if (!state.ma1On && color==='#f0b90b') return;
+    if (!state.ma2On && color==='#2962ff') return;
+    ctx.beginPath(); let started=false;
+    arr.forEach((v,i) => {
+      if (v==null) return;
+      const x = i*cw + cw/2, y = yScale(v);
+      started ? ctx.lineTo(x,y) : (ctx.moveTo(x,y), started=true);
+    });
+    ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.stroke();
+  }
+  if (state.ma1On) drawMa(ma1, '#f0b90b');
+  if (state.ma2On) drawMa(ma2, '#2962ff');
+
+  // Y-axis labels
+  ctx.fillStyle='#9faab8'; ctx.font='10px JetBrains Mono'; ctx.textAlign='right';
+  for (let i=0;i<=4;i++) {
+    const v = lo + (hi-lo)*i/4;
+    ctx.fillText(v.toFixed(2), W-4, H - H*i/4 - 4);
   }
 
-  // 均線
-  if (state.ma1On && state.ma1Period > 0) {
-    const fullMa = maOnCandles(allCandles, state.ma1Period).slice(startIdx, endIdx);
-    drawMaLine(ctx, fullMa, candleW, py, '#f0b90b');
-  }
-  if (state.ma2On && state.ma2Period > 0) {
-    const fullMa = maOnCandles(allCandles, state.ma2Period).slice(startIdx, endIdx);
-    drawMaLine(ctx, fullMa, candleW, py, '#2962ff');
-  }
-
-  // 平均成本線
-  if (state.shares > 0 && state.avgCost >= lo && state.avgCost <= hi) {
-    const y = py(state.avgCost);
-    ctx.strokeStyle = 'rgba(240, 185, 11, 0.45)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 4]);
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#f0b90b';
-    ctx.font = 'bold 9px JetBrains Mono';
-    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-    ctx.fillText('成本 ' + state.avgCost.toFixed(2), 4, y - 2);
-  }
-
-  // 掛單線
-  for (const ord of state.pendingOrders) {
-    if (ord.price < lo || ord.price > hi) continue;
-    const y = py(ord.price);
-    const isLineBuy = ord.side === 'buy';
-    ctx.strokeStyle = isLineBuy ? 'rgba(38,166,154,0.55)' : 'rgba(239,83,80,0.55)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([5, 3]);
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = isLineBuy ? '#26a69a' : '#ef5350';
-    ctx.font = 'bold 9px JetBrains Mono';
-    ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-    ctx.fillText(`${isLineBuy ? '掛買' : '掛賣'} ${ord.qty}@${ord.price.toFixed(2)}`, chartW - 4, y - 2);
-  }
-
-  // 現價刻度框
-  if (isLive) {
-    const cur = state.displayPrice;
-    if (cur >= lo && cur <= hi) {
-      const curY = py(cur);
-      const last = candles[candles.length - 1];
-      const curColor = (last && last.c >= last.o) ? '#26a69a' : '#ef5350';
-      ctx.fillStyle = curColor;
-      ctx.fillRect(chartW, curY - 8, padR - 2, 16);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px JetBrains Mono';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(cur.toFixed(2), chartW + (padR - 2) / 2, curY);
-    }
-  }
-
-  renderTimeAxis(candles);
-}
-
-function drawMaLine(ctx, arr, candleW, py, color) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1.4;
+  // live price tag
+  const last   = state.prices[state.prices.length-1].p;
+  const tagY   = yScale(last);
+  const tagW   = 54, tagH = 16;
+  const tagUp  = last >= (candles[candles.length-2]?.c || last);
+  ctx.fillStyle = tagUp ? '#26a69a' : '#ef5350';
   ctx.beginPath();
-  let started = false;
-  for (let i = 0; i < arr.length; i++) {
-    if (arr[i] == null) continue;
-    const x = (i + 0.5) * candleW;
-    const y = py(arr[i]);
-    if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
+  ctx.roundRect(W - tagW, tagY - tagH/2, tagW, tagH, 3);
+  ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font='bold 10px JetBrains Mono'; ctx.textAlign='center';
+  ctx.fillText(last.toFixed(2), W - tagW/2, tagY + 4);
+
+  // Time axis
+  renderTimeAxis(candles, cw);
 }
 
-/* 時間軸：顯示 PULSE 編號 */
-function renderTimeAxis(candles) {
-  const el = $('timeAxis');
-  if (candles.length === 0) { el.innerHTML = ''; return; }
-  const c = $('priceChart');
-  const W = c.clientWidth;
-  const padR = 50;
-  const chartW = W - padR;
-  const positions = [0, 0.25, 0.5, 0.75, 1];
-  const html = positions.map(p => {
-    const idx = Math.min(candles.length - 1, Math.round(p * (candles.length - 1)));
-    const pulse = candles[idx].startPulse;
-    const px = p * chartW;
-    return `<span style="left:${px}px">D${String(pulse).padStart(4,'0')}</span>`;
-  }).join('');
-  el.innerHTML = html;
+function renderTimeAxis(candles, cw) {
+  const ax = $('timeAxis'); if (!ax) return;
+  ax.innerHTML='';
+  const step = Math.max(1, Math.floor(candles.length / 5));
+  candles.forEach((k,i) => {
+    if (i % step !== 0 && i !== candles.length-1) return;
+    const sp = document.createElement('span');
+    sp.textContent = 'D'+String(k.startPulse).padStart(4,'0');
+    sp.style.left  = (i * cw + cw/2) + 'px';
+    ax.appendChild(sp);
+  });
 }
 
-/* ============== TRADE ============== */
+/* ============================================================
+   TRADE
+   ============================================================ */
 function currentPrice() { return state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice; }
 function getQty() {
-  const mode = state.qtyMode;
-  const p = state.tradingMode === 'limit' ? (parseFloat($('limitPriceInput').value) || currentPrice()) : currentPrice();
-  if (mode === 'max') return Math.floor(state.cash / p);
-  const raw = parseInt($('qtyInput').value, 10);
-  return Math.max(1, isNaN(raw) ? 0 : raw);
+  const p = state.tradingMode==='limit' ? (parseFloat($('limitPriceInput')?.value)||currentPrice()) : currentPrice();
+  if (state.qtyMode==='max') return Math.floor(state.cash/p);
+  const raw = parseInt($('qtyInput')?.value,10);
+  return Math.max(1, isNaN(raw)?0:raw);
 }
 
-function buy() {
-  if (state.tradingMode === 'limit') return placeLimitOrder('buy');
-  const p = currentPrice();
-  let qty = getQty();
-  if (p * qty > state.cash) { qty = Math.floor(state.cash / p); if (qty <= 0) { toast('現金不足'); playSfx('reject'); return; } }
-  executeMarketBuy(qty, p);
-  playSfx('marketBuy');
+function executeMarketBuy(qty, p) {
+  const cost = qty * p;
+  state.avgCost = (state.avgCost * state.shares + cost) / (state.shares + qty);
+  state.shares += qty; state.cash -= cost;
+  const msg = `${pulseStr(currentPulse())} 買 ${qty} @${p.toFixed(2)} = ${fmt(cost)}`;
+  addLog(msg, 'buy');
+  state.orderHistory.unshift({ side:'buy', type:'market', qty, price:p, placedPulse:currentPulse() });
+  updateOrdersUI(); maybeUpdatePanel(true);
 }
 
-function sell() {
-  if (state.tradingMode === 'limit') return placeLimitOrder('sell');
-  if (state.shares <= 0) { toast('沒有持倉'); playSfx('reject'); return; }
-  const p = currentPrice();
-  let qty = state.qtyMode === 'max' ? state.shares : Math.min(state.shares, getQty());
-  if (qty <= 0) return;
-  executeMarketSell(qty, p);
-  playSfx('marketSell');
-}
-
-function executeMarketBuy(qty, p, fromLimit = false) {
-  const totalCost = state.avgCost * state.shares + p * qty;
-  state.shares += qty;
-  state.avgCost = totalCost / state.shares;
-  state.cash -= p * qty;
-  state.trades++;
-  log(`買 ${qty} @${p.toFixed(2)} = ${fmt(p*qty)}`, 'buy', 'trade');
-  state.executedHistory.unshift({ id: state.nextOrderId++, side: 'buy', qty, price: p, ts: Date.now(), profit: null, kind: fromLimit ? 'limit' : 'market' });
-  if (state.executedHistory.length > 50) state.executedHistory.pop();
-  maybeUpdatePanel(true);
-  updateOrdersUI();
-}
-
-function executeMarketSell(qty, p, fromLimit = false) {
-  const profit = (p - state.avgCost) * qty;
-  state.realizedPnl += profit;
-  state.cash += p * qty;
-  state.shares -= qty;
-  if (state.shares === 0) state.avgCost = 0;
-  state.trades++;
-  log(`賣 ${qty} @${p.toFixed(2)} ${profit >= 0 ? '+' : ''}${fmt(profit)}`, 'sell', 'trade');
-  state.executedHistory.unshift({ id: state.nextOrderId++, side: 'sell', qty, price: p, ts: Date.now(), profit, kind: fromLimit ? 'limit' : 'market' });
-  if (state.executedHistory.length > 50) state.executedHistory.pop();
-  maybeUpdatePanel(true);
-  updateOrdersUI();
+function executeMarketSell(qty, p) {
+  const revenue = qty * p;
+  const pnl     = (p - state.avgCost) * qty;
+  state.realizedPnl += pnl;
+  if (qty >= state.shares) { state.shares=0; state.avgCost=0; }
+  else state.shares -= qty;
+  state.cash += revenue;
+  const msg = `${pulseStr(currentPulse())} 賣 ${qty} @${p.toFixed(2)} PnL:${pnl>=0?'+':''}${fmt(pnl)}`;
+  addLog(msg, 'sell');
+  state.orderHistory.unshift({ side:'sell', type:'market', qty, price:p, placedPulse:currentPulse() });
+  updateOrdersUI(); maybeUpdatePanel(true);
 }
 
 function placeLimitOrder(side) {
-  const price = parseFloat($('limitPriceInput').value);
-  if (!isFinite(price) || price <= 0) { toast('請輸入有效目標價'); playSfx('reject'); return; }
-  let qty = getQty();
-  if (qty <= 0) { toast('請輸入數量'); playSfx('reject'); return; }
-  if (side === 'buy') {
-    if (price * qty > state.cash) {
-      qty = Math.floor(state.cash / price);
-      if (qty <= 0) { toast('現金不足'); playSfx('reject'); return; }
+  const qty  = getQty(); if (qty<=0){toast('數量無效');playSfx('reject');return;}
+  const raw  = parseFloat($('limitPriceInput')?.value);
+  if (isNaN(raw)||raw<=0){toast('目標價無效');playSfx('reject');return;}
+  const lp   = +raw.toFixed(2);
+  if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
+  state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
+  addLog(`掛${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
+  playSfx('orderPlace'); updateOrdersUI();
+}
+
+function checkPendingOrders(p) {
+  state.pendingOrders = state.pendingOrders.filter(o => {
+    if (o.side==='buy'&&p<=o.limitPrice) {
+      if (o.qty*o.limitPrice>state.cash) { toast('現金不足，掛單取消'); return false; }
+      executeMarketBuy(o.qty, o.limitPrice); playSfx('limitFill');
+      state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
+      return false;
     }
-  } else {
-    if (state.shares <= 0) { toast('沒有持倉可賣'); playSfx('reject'); return; }
-    qty = state.qtyMode === 'max' ? state.shares : Math.min(state.shares, qty);
-    if (qty <= 0) return;
-  }
-  state.pendingOrders.push({
-    id: state.nextOrderId++, side, qty, price, ts: Date.now(),
+    if (o.side==='sell'&&p>=o.limitPrice) {
+      if (o.qty>state.shares) { toast('持倉不足，掛單取消'); return false; }
+      executeMarketSell(o.qty, o.limitPrice); playSfx('limitFill');
+      state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
+      return false;
+    }
+    return true;
   });
-  log(`掛${side === 'buy' ? '買' : '賣'} ${qty} @${price.toFixed(2)}`, side, 'trade');
-  toast(`已掛單 ${side === 'buy' ? '買' : '賣'} ${qty}@${price.toFixed(2)}`, 'news');
-  playSfx('orderPlace');
-  updateOrdersUI();
-  drawChartArea();
 }
 
-function checkPendingOrders(curPrice) {
-  if (state.pendingOrders.length === 0) return;
-  const remaining = [];
-  for (const ord of state.pendingOrders) {
-    let trigger = false;
-    if (ord.side === 'buy' && curPrice <= ord.price) trigger = true;
-    if (ord.side === 'sell' && curPrice >= ord.price) trigger = true;
-    if (trigger) {
-      if (ord.side === 'buy') {
-        if (ord.price * ord.qty > state.cash) { log(`掛買失敗（現金不足）${ord.qty}@${ord.price.toFixed(2)}`, 'sell', 'trade'); continue; }
-        executeMarketBuy(ord.qty, ord.price, true);
-        toast(`限價買入 ${ord.qty}@${ord.price.toFixed(2)}`, 'surge');
-        playSfx('limitFill');
-      } else {
-        const qty = Math.min(state.shares, ord.qty);
-        if (qty <= 0) { log(`掛賣失敗（無持倉）${ord.qty}@${ord.price.toFixed(2)}`, 'sell', 'trade'); continue; }
-        executeMarketSell(qty, ord.price, true);
-        toast(`限價賣出 ${qty}@${ord.price.toFixed(2)}`, 'surge');
-        playSfx('limitFill');
-      }
-    } else {
-      remaining.push(ord);
-    }
-  }
-  state.pendingOrders = remaining;
-  updateOrdersUI();
+function buy() {
+  if (state.tradingMode==='limit') return placeLimitOrder('buy');
+  const p=currentPrice(); let qty=getQty();
+  if (p*qty>state.cash){qty=Math.floor(state.cash/p);if(qty<=0){toast('現金不足');playSfx('reject');return;}}
+  executeMarketBuy(qty,p); playSfx('marketBuy');
+}
+function sell() {
+  if (state.tradingMode==='limit') return placeLimitOrder('sell');
+  if (state.shares<=0){toast('沒有持倉');playSfx('reject');return;}
+  const p=currentPrice(); const qty=state.qtyMode==='max'?state.shares:Math.min(state.shares,getQty());
+  if (qty<=0) return;
+  executeMarketSell(qty,p); playSfx('marketSell');
 }
 
-function cancelOrder(id) {
-  state.pendingOrders = state.pendingOrders.filter(o => o.id !== id);
-  log('取消掛單', '', 'trade');
-  playSfx('click');
-  updateOrdersUI();
-  drawChartArea();
-}
-
-function updateOrdersUI() {
-  $('ordersBtn').classList.toggle('has-pending', state.pendingOrders.length > 0);
-  const pList = $('pendingList');
-  if (state.pendingOrders.length === 0) {
-    pList.innerHTML = '<div class="orderEmpty">尚無掛單</div>';
-  } else {
-    pList.innerHTML = state.pendingOrders.map(o => {
-      const placedAt = state.tick - Math.round((Date.now() - o.ts) / TICK_MS);
-      const placedPulse = Math.max(0, Math.floor(placedAt * PULSE_PER_TICK));
-      return `<div class="orderItem">
-        <span class="orderSide ${o.side}">${o.side === 'buy' ? '買' : '賣'}</span>
-        <div>
-          <div class="orderInfo">${o.qty} 股 @ ${o.price.toFixed(2)}</div>
-          <div class="orderSub">掛單於 D${String(placedPulse).padStart(4,'0')}</div>
-        </div>
-        <button class="orderAct" data-cancel="${o.id}">取消</button>
-      </div>`;
-    }).join('');
-    pList.querySelectorAll('[data-cancel]').forEach(b => {
-      b.onclick = () => cancelOrder(parseInt(b.dataset.cancel, 10));
-    });
-  }
-  const hList = $('historyList');
-  if (state.executedHistory.length === 0) {
-    hList.innerHTML = '<div class="orderEmpty">尚無歷史</div>';
-  } else {
-    hList.innerHTML = state.executedHistory.map(o => {
-      const ph = state.tick - Math.round((Date.now() - o.ts) / TICK_MS);
-      const pulse = Math.max(0, Math.floor(ph * PULSE_PER_TICK));
-      const resultHtml = (o.profit != null)
-        ? `<span class="orderResult ${o.profit >= 0 ? 'profit' : 'loss'}">${o.profit >= 0 ? '+' : ''}${fmt(o.profit)}</span>`
-        : '<span class="orderSub">建倉</span>';
-      return `<div class="orderItem">
-        <span class="orderSide ${o.side}">${o.side === 'buy' ? '買' : '賣'}</span>
-        <div>
-          <div class="orderInfo">${o.qty} 股 @ ${o.price.toFixed(2)} <span class="orderSub">${o.kind === 'limit' ? '限價' : '市價'}</span></div>
-          <div class="orderSub">D${String(pulse).padStart(4,'0')}</div>
-        </div>
-        ${resultHtml}
-      </div>`;
-    }).join('');
-  }
-}
-
-/* ============== 日曆 UI ============== */
-function updateCalendarUI() {
-  $('calCurrentPulse').textContent = pulseStr(currentPulse());
-  const uList = $('upcomingList');
-  if (state.upcomingEvents.length === 0) {
-    uList.innerHTML = '<div class="orderEmpty">尚無預告事件</div>';
-  } else {
-    const now = currentPulse();
-    uList.innerHTML = state.upcomingEvents
-      .slice().sort((a, b) => a.executePulse - b.executePulse)
-      .map(ev => {
-        const remain = ev.executePulse - now;
-        return `<div class="calItem ${ev.type}">
-          <div>
-            <div class="calPulse ${ev.type}">D${String(ev.executePulse).padStart(4,'0')}</div>
-            <div class="calCountdown">${remain > 0 ? remain + ' 天後' : '即將觸發'}</div>
-          </div>
-          <div>
-            <div class="calText">${ev.type === 'good' ? '◆ 利多' : '◆ 利空'} — ${ev.text}</div>
-            <div class="calSub">${ev.impact}</div>
-          </div>
-        </div>`;
-      }).join('');
-  }
-  const pList = $('pastList');
-  if (state.pastEvents.length === 0) {
-    pList.innerHTML = '<div class="orderEmpty">尚無已發生事件</div>';
-  } else {
-    pList.innerHTML = state.pastEvents.slice(0, 30).map(ev => {
-      return `<div class="calItem ${ev.type} past">
-        <div>
-          <div class="calPulse ${ev.type}">D${String(ev.actualPulse || ev.executePulse).padStart(4,'0')}</div>
-          <div class="calCountdown">已觸發</div>
-        </div>
-        <div>
-          <div class="calText">${ev.type === 'good' ? '◆ 利多' : '◆ 利空'} — ${ev.text}</div>
-          <div class="calSub">${ev.impact}</div>
-        </div>
-      </div>`;
-    }).join('');
-  }
-}
-
-/* ============== LOG ============== */
-function log(msg, cls = '', cat = 'all') {
-  const ts = pulseStr(currentPulse());
-  const entry = { ts, msg, cls };
-  state.logEntries.all.unshift(entry);
-  if (cat === 'trade') state.logEntries.trade.unshift(entry);
-  if (cat === 'news') state.logEntries.news.unshift(entry);
-  if (state.logEntries.all.length > 100) state.logEntries.all.pop();
-  if (state.logEntries.trade.length > 100) state.logEntries.trade.pop();
-  if (state.logEntries.news.length > 100) state.logEntries.news.pop();
-  renderLog();
+/* ============================================================
+   LOG
+   ============================================================ */
+const LOG_ALL=[], LOG_TRADE=[], LOG_NEWS=[];
+function addLog(text, type) {
+  const entry = { text, type };
+  LOG_ALL.unshift(entry);
+  if (type==='buy'||type==='sell'||type==='trade') LOG_TRADE.unshift(entry);
+  if (type==='news'||type==='event') LOG_NEWS.unshift(entry);
+  if (LOG_ALL.length>200)   LOG_ALL.pop();
+  if (LOG_TRADE.length>100) LOG_TRADE.pop();
+  if (LOG_NEWS.length>100)  LOG_NEWS.pop();
 }
 function renderLog() {
-  const targets = { all: 'logAll', trade: 'logTrade', news: 'logNews' };
-  for (const [cat, id] of Object.entries(targets)) {
-    const el = $(id);
-    if (!el) continue;
-    const list = state.logEntries[cat];
-    if (list.length === 0) { el.innerHTML = ''; continue; }
-    el.innerHTML = list.map(e =>
-      `<div class="log-entry ${e.cls}"><span class="lt">${e.ts}</span>${e.msg}</div>`
-    ).join('');
-  }
+  const tab = state.logTab;
+  const list = tab==='trade' ? LOG_TRADE : tab==='news' ? LOG_NEWS : LOG_ALL;
+  const el = $('log'+tab.charAt(0).toUpperCase()+tab.slice(1)) || $('logAll');
+  if (!el) return;
+  el.innerHTML = list.slice(0,80).map(e =>
+    `<div class="log-entry ${e.type}"><span class="lt">${e.text}</span></div>`
+  ).join('');
 }
 
-function toast(msg, cls = '', dur = 2400) {
-  const t = $('toast');
-  t.textContent = msg; t.className = cls;
-  t.classList.remove('hidden');
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.add('hidden'), dur);
+/* ============================================================
+   ORDERS UI
+   ============================================================ */
+function updateOrdersUI() {
+  const pl = $('pendingList');
+  if (pl) pl.innerHTML = state.pendingOrders.length
+    ? state.pendingOrders.map(o =>
+        `<div class="orderRow"><span class="oSide ${o.side}">${o.side==='buy'?'限買':'限賣'}</span>
+         <span>${o.qty}</span><span>@${o.limitPrice}</span><span class="oMeta">D${o.placedPulse}</span></div>`
+      ).join('') : '<div class="orderEmpty">尚無掛單</div>';
+  const hl = $('historyList');
+  if (hl) hl.innerHTML = state.orderHistory.slice(0,30).length
+    ? state.orderHistory.slice(0,30).map(o =>
+        `<div class="orderRow"><span class="oSide ${o.side}">${o.type==='limit'?'限':'市'}${o.side==='buy'?'買':'賣'}</span>
+         <span>${o.qty}</span><span>@${o.filledAt||o.price}</span><span class="oMeta">D${o.placedPulse}</span></div>`
+      ).join('') : '<div class="orderEmpty">尚無歷史</div>';
 }
 
-/* ============== 音效（合成）============== */
+/* ============================================================
+   CALENDAR UI
+   ============================================================ */
+function updateCalendarUI() {
+  const cp = currentPulse();
+  const cl = $('calCurrentPulse'); if(cl) cl.textContent = pulseStr(cp);
+  const ul = $('upcomingList');
+  if (ul) ul.innerHTML = state.forecastEvents.length
+    ? state.forecastEvents.sort((a,b)=>a.executePulse-b.executePulse).map(ev =>
+        `<div class="calRow ${ev.dir}"><span class="calCountdown">${ev.executePulse-cp} 天後</span>
+         <span class="calMsg">${ev.msg.replace(/\{N\}/g,ev.executePulse-cp)}</span></div>`
+      ).join('') : '<div class="orderEmpty">尚無預告</div>';
+}
+
+/* ============================================================
+   AUDIO
+   ============================================================ */
+let audioCtx = null;
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if (audioCtx.state==='suspended') audioCtx.resume();
+  return audioCtx;
+}
+function beep(freq,vol,start,dur) {
+  try {
+    const ctx=getCtx(), o=ctx.createOscillator(), g=ctx.createGain();
+    o.frequency.setValueAtTime(freq,start);
+    g.gain.setValueAtTime(vol,start); g.gain.exponentialRampToValueAtTime(0.0001,start+dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(start); o.stop(start+dur);
+  } catch(e){}
+}
 function playSfx(kind) {
-  if (state.muted || !audioCtx) return;
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  const now = audioCtx.currentTime;
-  if (kind === 'marketBuy') {
-    beep(660, 0.06, now, 0.22); beep(880, 0.08, now + 0.06, 0.22);
-  } else if (kind === 'marketSell') {
-    beep(660, 0.06, now, 0.22); beep(440, 0.10, now + 0.06, 0.22);
-  } else if (kind === 'orderPlace') {
-    beep(700, 0.04, now, 0.18); beep(900, 0.05, now + 0.05, 0.18);
-  } else if (kind === 'limitFill') {
-    [700, 900, 1100, 1320].forEach((f, i) => beep(f, 0.06, now + i*0.05, 0.22));
-  } else if (kind === 'news') {
-    beep(330, 0.10, now, 0.18, 'triangle'); beep(440, 0.08, now + 0.08, 0.16, 'triangle');
-  } else if (kind === 'pageFlip') {
-    try {
-      const sr = audioCtx.sampleRate;
-      const bufLen = Math.ceil(sr * 0.16);
-      const buf = audioCtx.createBuffer(1, bufLen, sr);
-      const d = buf.getChannelData(0);
-      for (let i = 0; i < bufLen; i++)
-        d[i] = (Math.random()*2-1) * Math.pow(1 - i/bufLen, 1.3);
-      const src = audioCtx.createBufferSource(); src.buffer = buf;
-      const bp = audioCtx.createBiquadFilter();
-      bp.type = 'bandpass'; bp.frequency.value = 3800; bp.Q.value = 0.35;
-      const g2 = audioCtx.createGain(); g2.gain.setValueAtTime(0.09, now);
-      src.connect(bp); bp.connect(g2); g2.connect(audioCtx.destination);
-      src.start(now);
-    } catch(e) {}
-  } else if (kind === 'panelTick') {
-    beep(1600, 0.015, now, 0.006);
-  } else if (kind === 'click') {
-    beep(1200, 0.02, now, 0.12);
-  } else if (kind === 'reject') {
-    beep(220, 0.16, now, 0.22, 'sawtooth');
-  } else if (kind === 'crash') {
-    beep(120, 0.7, now, 0.32, 'sawtooth'); beep(90, 0.7, now + 0.1, 0.22, 'sawtooth');
-  } else if (kind === 'surge') {
-    [880, 1100, 1320].forEach((f, i) => beep(f, 0.08, now + i*0.07, 0.25));
-  } else if (kind === 'win') {
-    [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.2, now + i*0.13, 0.32));
-  }
-}
-function beep(freq, dur, startAt, gain, type='square') {
-  const o = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  o.type = type;
-  o.frequency.setValueAtTime(freq, startAt);
-  g.gain.setValueAtTime(gain, startAt);
-  g.gain.exponentialRampToValueAtTime(0.001, startAt + dur);
-  o.connect(g).connect(audioCtx.destination);
-  o.start(startAt); o.stop(startAt + dur + 0.05);
+  try {
+    const ctx=getCtx(), now=ctx.currentTime;
+    if (kind==='marketBuy')   { beep(660,0.08,now,0.05); beep(880,0.05,now+0.05,0.07); }
+    else if (kind==='marketSell') { beep(440,0.08,now,0.05); beep(330,0.05,now+0.05,0.07); }
+    else if (kind==='orderPlace') { beep(550,0.04,now,0.04); }
+    else if (kind==='limitFill')  { beep(760,0.06,now,0.04); beep(960,0.04,now+0.04,0.06); }
+    else if (kind==='news')       { beep(400,0.04,now,0.06); beep(500,0.03,now+0.06,0.06); }
+    else if (kind==='click')      { beep(800,0.02,now,0.03); }
+    else if (kind==='reject')     { beep(180,0.06,now,0.08); }
+    else if (kind==='panelTick')  { beep(1600,0.015,now,0.006); }
+    else if (kind==='pageFlip') {
+      const sr=ctx.sampleRate, bl=Math.ceil(sr*0.16);
+      const buf=ctx.createBuffer(1,bl,sr); const d=buf.getChannelData(0);
+      for(let i=0;i<bl;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/bl,1.3);
+      const src=ctx.createBufferSource(); src.buffer=buf;
+      const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=3800; bp.Q.value=0.35;
+      const g2=ctx.createGain(); g2.gain.setValueAtTime(0.09,now);
+      src.connect(bp); bp.connect(g2); g2.connect(ctx.destination); src.start(now);
+    }
+  } catch(e){}
 }
 
-function setupBGM() {
-  bgm = new Audio('./assets/audio/bgm.mp3');
-  bgm.loop = true; bgm.volume = 0.22;
-}
+let bgm=null, bgmStarted=false;
 function startBGM() {
-  if (!bgm || state.muted) return;
-  bgm.play().catch(()=>{});
+  if (bgmStarted) return; bgmStarted=true;
+  try {
+    bgm=new Audio('./assets/audio/bgm.mp3');
+    bgm.loop=true; bgm.volume=0.22; bgm.play().catch(()=>{});
+  } catch(e){}
 }
 function toggleMute() {
-  state.muted = !state.muted;
-  $('muteBtn').textContent = state.muted ? '♪̷' : '♪';
-  if (bgm) { if (state.muted) bgm.pause(); else bgm.play().catch(()=>{}); }
+  if (bgm) bgm.muted=!bgm.muted;
+  const mb=$('muteBtn'); if(mb) mb.style.opacity=bgm&&bgm.muted?'0.35':'1';
+}
+
+/* ============================================================
+   WIN
+   ============================================================ */
+function showWin() {
+  const ws=$('winScreen'); if(!ws||!ws.classList.contains('hidden')) return;
+  ws.classList.remove('hidden');
+  const mins=(state.tick*TICK_MS/1000/60).toFixed(1);
+  const wt=$('winTime'); if(wt) wt.textContent=mins+'分鐘';
+  const wtr=$('winTrades'); if(wtr) wtr.textContent=state.orderHistory.length+'筆';
+}
+
+/* ============================================================
+   OVERLAYS
+   ============================================================ */
+function openOverlay(id) {
+  document.querySelectorAll('.overlay').forEach(o=>o.classList.add('hidden'));
+  const el=$(id); if(el) el.classList.remove('hidden');
+}
+function closeOverlay(id) { const el=$(id); if(el) el.classList.add('hidden'); }
+
+/* ============================================================
+   FIREBASE SYNC + LEADERBOARD
+   ============================================================ */
+function syncToFirebase() {
+  if (!db || !playerId) return;
+  const cur = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
+  const equity = state.cash + state.shares * cur;
+
+  // Broadcast check
+  if (lastSyncEq > 0) {
+    const gain   = equity - lastSyncEq;
+    const gainPct = (gain / lastSyncEq) * 100;
+    if (gain > 500 || gainPct > 10) {
+      const msg = `${nickname} 爆賺 +${fmt(gain)} (+${gainPct.toFixed(1)}%)！`;
+      db.ref('empire/broadcasts').push({
+        msg, ts: Date.now(), type:'surge'
+      }).catch(()=>{});
+    }
+  }
+  lastSyncEq = equity;
+
+  db.ref('empire/players/' + playerId).set({
+    nickname: nickname || '匿名',
+    equity: Math.round(equity),
+    cash: Math.round(state.cash),
+    shares: state.shares,
+    market: selectedMkt,
+    lastSeen: Date.now(),
+  }).catch(()=>{});
+}
+
+function setupLeaderboard() {
+  if (!db) return;
+  db.ref('empire/players').on('value', snap => {
+    const data = snap.val() || {};
+    const players = Object.entries(data)
+      .map(([id,p])=>({id,...p}))
+      .filter(p => Date.now()-p.lastSeen < 3*60*1000) // active in last 3min
+      .sort((a,b)=>b.equity-a.equity)
+      .slice(0,10);
+    renderLeaderboard(players);
+  });
+
+  db.ref('empire/broadcasts').limitToLast(1).on('child_added', snap => {
+    const d = snap.val();
+    if (d && Date.now()-d.ts < 8000) showBroadcast(d.msg);
+  });
+}
+
+function renderLeaderboard(players) {
+  const el = $('leaderboardList'); if (!el) return;
+  if (!players.length) { el.innerHTML='<div class="lbEmpty">尚無在線玩家</div>'; return; }
+  el.innerHTML = players.map((p,i) => {
+    const isSelf = p.id === playerId;
+    const mkt = MARKETS[p.market];
+    const mktColor = mkt ? mkt.color : '#fff';
+    return `<div class="lbRow${isSelf?' self':''}">
+      <span class="lbRank">${i+1}</span>
+      <span class="lbName">${p.nickname||'匿名'}</span>
+      <span class="lbMkt" style="color:${mktColor};">${mkt?mkt.name:''}</span>
+      <span class="lbEq">${fmt(p.equity)}</span>
+    </div>`;
+  }).join('');
+}
+
+let _bcTimeout = null;
+function showBroadcast(msg) {
+  const el = $('broadcastBanner'); if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden','bc-out');
+  el.classList.add('bc-in');
+  clearTimeout(_bcTimeout);
+  _bcTimeout = setTimeout(() => {
+    el.classList.remove('bc-in'); el.classList.add('bc-out');
+    setTimeout(() => el.classList.add('hidden'), 600);
+  }, 4000);
+}
+
+/* ============================================================
+   CHART GESTURE
+   ============================================================ */
+function setupChartGesture() {
+  const c = $('priceChart'); if (!c) return;
+  let startX=0, startOff=0, startDist=0, dragging=false;
+  const LOCK=10;
+
+  function onStart(x) { startX=x; startOff=state.viewOffset; dragging=true; }
+  function onMove(x) {
+    if (!dragging) return;
+    const dx = x - startX;
+    if (Math.abs(dx) < LOCK && !dragging) return;
+    const all = buildCandles(state.candlePeriod);
+    const candleW = c.getBoundingClientRect().width / VISIBLE_CANDLES_BASE;
+    state.viewOffset = Math.max(0, Math.min(all.length - VISIBLE_CANDLES_BASE, startOff + dx/candleW));
+    state.pinned = (state.viewOffset <= 0);
+    drawCandleChart();
+  }
+  function onEnd() { dragging=false; }
+
+  c.addEventListener('mousedown', e=>{onStart(e.clientX);});
+  window.addEventListener('mousemove',e=>{onMove(e.clientX);});
+  window.addEventListener('mouseup', onEnd);
+  c.addEventListener('touchstart',e=>{e.preventDefault();onStart(e.touches[0].clientX);},{passive:false});
+  c.addEventListener('touchmove', e=>{e.preventDefault();onMove(e.touches[0].clientX);},{passive:false});
+  c.addEventListener('touchend',  onEnd);
+
+  const rb=$('resetViewBtn');
+  if (rb) rb.addEventListener('click',()=>{ state.viewOffset=0; state.pinned=true; rb.classList.add('hidden'); drawCandleChart(); });
+}
+
+/* ============================================================
+   GLOBE (Canvas 2D orthographic projection)
+   ============================================================ */
+let globeRotX = 0.2, globeRotY = 0;
+let globeAnimId = null;
+let globeDrag  = false, globeLastX = 0, globeLastY = 0;
+let globeSpinX = 0, globeSpinY = 0.003;
+let selectedMktHover = null;
+
+const MARKET_LIST = ['empire','tokyo','brazil','riyadh','seoul'];
+
+function latLngToXYZ(lat, lng, r) {
+  const phi   = (90 - lat) * Math.PI / 180;
+  const theta = (lng + 180) * Math.PI / 180;
+  return {
+    x: -r * Math.sin(phi) * Math.cos(theta),
+    y:  r * Math.cos(phi),
+    z:  r * Math.sin(phi) * Math.sin(theta),
+  };
+}
+
+function projectPoint(px, py, pz, cx, cy, r) {
+  // rotate Y
+  const cosY = Math.cos(globeRotY), sinY = Math.sin(globeRotY);
+  const rx   = px * cosY - pz * sinY;
+  const rz   = px * sinY + pz * cosY;
+  // rotate X
+  const cosX = Math.cos(globeRotX), sinX = Math.sin(globeRotX);
+  const ry2  = py * cosX - rz * sinX;
+  const rz2  = py * sinX + rz * cosX;
+  return { sx: cx + rx, sy: cy - ry2, visible: rz2 > -r * 0.05 };
+}
+
+function drawGlobe() {
+  const c = $('globeCanvas'); if (!c) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = c.offsetWidth, H = c.offsetHeight;
+  c.width = W*dpr; c.height = H*dpr;
+  const ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const cx = W/2, cy = H/2;
+  const r  = Math.min(W,H) * 0.38;
+
+  // atmosphere
+  const atm = ctx.createRadialGradient(cx,cy,r*0.85,cx,cy,r*1.2);
+  atm.addColorStop(0,'rgba(41,98,255,0.18)');
+  atm.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.beginPath(); ctx.arc(cx,cy,r*1.2,0,Math.PI*2);
+  ctx.fillStyle=atm; ctx.fill();
+
+  // globe base
+  const bg = ctx.createRadialGradient(cx-r*0.3,cy-r*0.3,r*0.1,cx,cy,r);
+  bg.addColorStop(0,'#1a2744');
+  bg.addColorStop(0.6,'#0d1627');
+  bg.addColorStop(1,'#060c1a');
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  ctx.fillStyle=bg; ctx.fill();
+
+  // lat/lng grid lines
+  ctx.strokeStyle='rgba(41,98,255,0.12)'; ctx.lineWidth=0.5;
+  for (let lat=-60; lat<=60; lat+=30) {
+    ctx.beginPath(); let first=true;
+    for (let lng=-180; lng<=180; lng+=5) {
+      const {x,y,z}   = latLngToXYZ(lat,lng,r);
+      const pt = projectPoint(x,y,z,cx,cy,r);
+      if (!pt.visible) { first=true; continue; }
+      first ? ctx.moveTo(pt.sx,pt.sy) : ctx.lineTo(pt.sx,pt.sy);
+      first=false;
+    }
+    ctx.stroke();
+  }
+  for (let lng=-180; lng<=180; lng+=30) {
+    ctx.beginPath(); let first=true;
+    for (let lat=-90; lat<=90; lat+=5) {
+      const {x,y,z}   = latLngToXYZ(lat,lng,r);
+      const pt = projectPoint(x,y,z,cx,cy,r);
+      if (!pt.visible) { first=true; continue; }
+      first ? ctx.moveTo(pt.sx,pt.sy) : ctx.lineTo(pt.sx,pt.sy);
+      first=false;
+    }
+    ctx.stroke();
+  }
+
+  // sphere rim highlight
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+  const rim = ctx.createRadialGradient(cx-r*0.5,cy-r*0.5,r*0.3,cx,cy,r);
+  rim.addColorStop(0,'rgba(255,255,255,0.06)');
+  rim.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=rim; ctx.fill();
+  ctx.strokeStyle='rgba(41,98,255,0.35)'; ctx.lineWidth=1.5; ctx.stroke();
+
+  // market markers
+  const hitAreas = [];
+  MARKET_LIST.forEach(id => {
+    const m   = MARKETS[id];
+    const {x,y,z} = latLngToXYZ(m.lat, m.lng, r);
+    const pt  = projectPoint(x,y,z,cx,cy,r);
+    if (!pt.visible) return;
+
+    const isHover = selectedMktHover === id;
+    const dotR = isHover ? 8 : 5;
+
+    // glow
+    const glow = ctx.createRadialGradient(pt.sx,pt.sy,0,pt.sx,pt.sy,dotR*3);
+    glow.addColorStop(0, m.color.replace(')',',0.6)').replace('rgb','rgba').replace('#','rgba(').replace(/([0-9a-f]{2})/gi,(m2)=>parseInt(m2,16)+','));
+    // simpler glow:
+    ctx.beginPath(); ctx.arc(pt.sx,pt.sy,dotR*3,0,Math.PI*2);
+    ctx.fillStyle = m.color + '33'; ctx.fill();
+
+    // dot
+    ctx.beginPath(); ctx.arc(pt.sx,pt.sy,dotR,0,Math.PI*2);
+    ctx.fillStyle = m.color; ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+
+    // label
+    ctx.fillStyle='#fff'; ctx.font=`bold ${isHover?12:10}px Inter,sans-serif`;
+    ctx.textAlign='center';
+    ctx.fillText(m.name, pt.sx, pt.sy - dotR - 4);
+
+    hitAreas.push({ id, sx:pt.sx, sy:pt.sy, r:dotR+8 });
+  });
+
+  c._hitAreas = hitAreas;
+}
+
+function animateGlobe() {
+  if (!globeDrag) {
+    globeRotY += globeSpinY;
+    globeRotX += globeSpinX * 0.1;
+    globeRotX = Math.max(-0.6, Math.min(0.6, globeRotX));
+  }
+  drawGlobe();
+  globeAnimId = requestAnimationFrame(animateGlobe);
+}
+
+function setupGlobeEvents() {
+  const c = $('globeCanvas'); if (!c) return;
+
+  function getHit(x, y) {
+    const rect = c.getBoundingClientRect();
+    const ex = x - rect.left, ey = y - rect.top;
+    return (c._hitAreas||[]).find(h => Math.hypot(h.sx-ex,h.sy-ey) < h.r);
+  }
+
+  c.addEventListener('mousedown', e=>{
+    globeDrag=true; globeLastX=e.clientX; globeLastY=e.clientY;
+    globeSpinX=0; globeSpinY=0;
+  });
+  window.addEventListener('mousemove', e=>{
+    if (globeDrag) {
+      globeRotY += (e.clientX-globeLastX)*0.005;
+      globeRotX += (e.clientY-globeLastY)*0.003;
+      globeRotX = Math.max(-0.8,Math.min(0.8,globeRotX));
+      globeLastX=e.clientX; globeLastY=e.clientY;
+    } else {
+      const h=getHit(e.clientX,e.clientY);
+      selectedMktHover = h?h.id:null;
+      c.style.cursor   = h?'pointer':'grab';
+    }
+  });
+  window.addEventListener('mouseup', e=>{
+    if (globeDrag) {
+      globeDrag=false;
+      const h=getHit(e.clientX,e.clientY);
+      if (h) selectMarket(h.id);
+    }
+  });
+  c.addEventListener('touchstart',e=>{
+    e.preventDefault();
+    globeDrag=true; globeSpinX=0; globeSpinY=0;
+    globeLastX=e.touches[0].clientX; globeLastY=e.touches[0].clientY;
+  },{passive:false});
+  c.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    if(!globeDrag) return;
+    globeRotY += (e.touches[0].clientX-globeLastX)*0.005;
+    globeRotX += (e.touches[0].clientY-globeLastY)*0.003;
+    globeRotX = Math.max(-0.8,Math.min(0.8,globeRotX));
+    globeLastX=e.touches[0].clientX; globeLastY=e.touches[0].clientY;
+  },{passive:false});
+  c.addEventListener('touchend',e=>{
+    globeDrag=false;
+    if(e.changedTouches.length) {
+      const t=e.changedTouches[0];
+      const h=getHit(t.clientX,t.clientY);
+      if(h) selectMarket(h.id);
+    }
+  });
+}
+
+function selectMarket(id) {
+  selectedMkt = id;
+  const m = MARKETS[id];
+  const info = $('globeMarketInfo');
+  if (info) {
+    info.innerHTML = `<span class="gmName" style="color:${m.color}">${m.name}</span>
+      <span class="gmSub">${m.sub}</span>
+      <span class="gmStats">波動 ${['低','低','高','中','中'][MARKET_LIST.indexOf(id)]} · 基礎價 ${m.base}</span>`;
+    info.classList.remove('hidden');
+  }
+  const btn = $('globeEnterBtn');
+  if (btn) { btn.classList.remove('hidden'); btn.style.borderColor = m.color; btn.style.boxShadow=`0 0 20px ${m.color}66`; }
+}
+
+/* ============================================================
+   NICKNAME SCREEN
+   ============================================================ */
+function showNicknameScreen() {
+  const gs=$('globeScreen'); if(gs) gs.classList.add('hidden');
+  const ns=$('nicknameScreen'); if(ns) ns.classList.remove('hidden');
+  if (cancelAnimationFrame) cancelAnimationFrame(globeAnimId);
+}
+
+function startGame(loadedState) {
+  const ns=$('nicknameScreen'); if(ns) ns.classList.add('hidden');
+  const app=$('app'); if(app) app.classList.remove('hidden');
+
+  ensurePlayerId();
+  applyMarket(selectedMkt);
+
+  if (loadedState) {
+    // restore from data code
+    selectedMkt = loadedState.m || selectedMkt;
+    applyMarket(selectedMkt);
+    nickname = loadedState.n || nickname;
+    state.cash        = loadedState.c || 10000;
+    state.shares      = loadedState.s || 0;
+    state.avgCost     = (loadedState.a||0) / 100;
+    state.realizedPnl = loadedState.r || 0;
+  } else {
+    resetGameState();
+  }
+
+  startBGM();
+  initFirebase();
+  setupLeaderboard();
+  warmup();
+  startTick();
+  setupChartGesture();
+  setupIndicatorUI();
+}
+
+/* ============================================================
+   DATA CODE UI
+   ============================================================ */
+function showDataCode() {
+  const code = encodeGameState(state);
+  const el = $('dataCodeOutput'); if(!el) return;
+  el.value = code;
+  el.select();
+  navigator.clipboard.writeText(code).then(()=>toast('數據碼已複製！')).catch(()=>toast('請手動複製'));
   playSfx('click');
 }
-function checkWin() {
-  if (state.won) return;
-  const equity = state.cash + state.shares * currentPrice();
-  if (equity >= WIN_TARGET) {
-    state.won = true;
-    const elapsed = Math.round((Date.now() - state.startTime) / 1000);
-    const mins = Math.floor(elapsed / 60), secs = elapsed % 60;
-    $('winTime').textContent = `${mins} 分 ${secs} 秒 (DAY ${currentPulse()})`;
-    $('winTrades').textContent = state.trades;
-    $('winScreen').classList.remove('hidden');
-    playSfx('win');
-  }
+
+/* ============================================================
+   WARMUP + TICK
+   ============================================================ */
+let _tickInterval = null;
+function warmup() {
+  for (let i=0;i<600;i++) nextPrice(true);
+}
+function startTick() {
+  if (_tickInterval) clearInterval(_tickInterval);
+  _tickInterval = setInterval(tick, TICK_MS);
 }
 
-function openOverlay(id) { $(id).classList.remove('hidden'); }
-function closeOverlay(id) { $(id).classList.add('hidden'); }
-
-function updateMaLabels() {
-  $('ma1Label').textContent = `MA ${state.ma1Period}`;
-  $('ma2Label').textContent = `MA ${state.ma2Period}`;
-  $('ma1Legend').classList.toggle('hidden', !state.ma1On);
-  $('ma2Legend').classList.toggle('hidden', !state.ma2On);
+/* ============================================================
+   INDICATOR UI
+   ============================================================ */
+function setupIndicatorUI() {
+  const mi=$('ma1Input'), m2i=$('ma2Input');
+  const m1t=$('ma1Toggle'), m2t=$('ma2Toggle');
+  if (mi)  { mi.value=state.ma1;  mi.addEventListener('input',()=>{state.ma1=Math.max(1,+mi.value)||5;}); }
+  if (m2i) { m2i.value=state.ma2; m2i.addEventListener('input',()=>{state.ma2=Math.max(1,+m2i.value)||20;}); }
+  if (m1t) { m1t.checked=state.ma1On; m1t.addEventListener('change',()=>{state.ma1On=m1t.checked; $('ma1Legend').classList.toggle('hidden',!state.ma1On);}); }
+  if (m2t) { m2t.checked=state.ma2On; m2t.addEventListener('change',()=>{state.ma2On=m2t.checked; $('ma2Legend').classList.toggle('hidden',!state.ma2On);}); }
 }
 
-
-function updateModeUI() {
-  document.querySelectorAll('.modeBtn').forEach(b => {
-    b.classList.toggle('active', b.dataset.mode === state.tradingMode);
-  });
-  $('limitPriceRow').classList.toggle('hidden', state.tradingMode !== 'limit');
-  if (state.tradingMode === 'limit') {
-    const inp = $('limitPriceInput');
-    if (!inp.value || parseFloat(inp.value) <= 0) inp.value = currentPrice().toFixed(2);
-  }
-}
-
-function setupChartGesture() {
-  const c = $('priceChart');
-  let dragging = false;
-  let startX = 0, startY = 0;
-  let startOffset = 0, startScale = 1;
-  let lockedAxis = null;
-
-  const begin = (x, y) => {
-    dragging = true; startX = x; startY = y;
-    startOffset = state.viewOffset; startScale = state.yScaleMult;
-    lockedAxis = null; c.classList.add('dragging');
-  };
-  const move = (x, y) => {
-    if (!dragging) return;
-    const dx = x - startX, dy = y - startY;
-    if (!lockedAxis) {
-      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-        lockedAxis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-      }
-    }
-    if (lockedAxis === 'x') {
-      const W = c.clientWidth - 50;
-      const candleW = W / VISIBLE_CANDLES_BASE;
-      const allLen = buildCandles(state.candlePeriod).length;
-      const maxOffset = Math.max(0, allLen - VISIBLE_CANDLES_BASE);
-      state.viewOffset = Math.max(0, Math.min(maxOffset, Math.round(startOffset + dx / candleW)));
-    } else if (lockedAxis === 'y') {
-      const factor = Math.pow(1.012, dy);
-      state.yScaleMult = Math.max(0.2, Math.min(5, startScale * factor));
-    }
-    drawChartArea();
-  };
-  const end = () => { dragging = false; c.classList.remove('dragging'); };
-
-  c.addEventListener('mousedown', e => begin(e.clientX, e.clientY));
-  window.addEventListener('mousemove', e => move(e.clientX, e.clientY));
-  window.addEventListener('mouseup', end);
-  c.addEventListener('touchstart', e => { if (e.touches.length === 1) begin(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
-  c.addEventListener('touchmove', e => {
-    if (e.touches.length === 1) { move(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }
-  }, { passive: false });
-  c.addEventListener('touchend', end);
-  c.addEventListener('touchcancel', end);
-  c.addEventListener('wheel', e => {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 1.1 : 1/1.1;
-    state.yScaleMult = Math.max(0.2, Math.min(5, state.yScaleMult * factor));
-    drawChartArea();
-  }, { passive: false });
-  $('resetViewBtn').onclick = () => { state.viewOffset = 0; state.yScaleMult = 1; drawChartArea(); playSfx('click'); };
-}
-
-/* ============== Splash 動畫背景 ============== */
-function drawSplashChart() {
-  const c = $('splashChart');
-  if (!c || $('splashScreen').classList.contains('hidden')) return;
-  const ctx = c.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const w = c.clientWidth, h = c.clientHeight;
-  if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  // 漂浮 K 線剪影
-  const N = 60;
-  const candleW = w / N;
-  let price = h * 0.5;
-  const t0 = performance.now() / 1000;
-  ctx.strokeStyle = 'rgba(41,98,255,0.4)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, price);
-  for (let i = 0; i < N; i++) {
-    price += Math.sin((i + t0 * 4) * 0.3) * 8 + (Math.random() - 0.5) * 4;
-    price = Math.max(h*0.15, Math.min(h*0.85, price));
-    const x = i * candleW;
-    ctx.lineTo(x, price);
-  }
-  ctx.stroke();
-  requestAnimationFrame(drawSplashChart);
-}
-
-function startGame() {
-  $('splashScreen').classList.add('hidden');
-  state.started = true;
-  state.startTime = Date.now() - state.tick * TICK_MS;
-  startBGM();
-  playSfx('limitFill');
-}
-
+/* ============================================================
+   INIT
+   ============================================================ */
 function init() {
-  // 暖場 600 tick
-  state.prices = [{ t: 0, p: state.basePrice, v: 1000 }];
-  for (let i = 1; i < 600; i++) {
-    state.tick = i;
-    const next = nextPrice(true);  // 暖場不出新聞
-    state.prices.push({ t: i, p: next.p, v: next.v });
+  // Globe screen
+  const globeScreen = $('globeScreen');
+  if (globeScreen) {
+    globeScreen.classList.remove('hidden');
+    $('app').classList.add('hidden');
+    $('nicknameScreen').classList.add('hidden');
+    setupGlobeEvents();
+    animateGlobe();
   }
-  state.tick = state.prices.length;
-  state.displayPrice = state.prices[state.prices.length - 1].p;
-  state.shownPrice = state.displayPrice;
-  state.startTime = Date.now() - (state.prices.length - 1) * TICK_MS;
 
-  // qty btn
-  document.querySelectorAll('.qtyBtn').forEach(btn => {
-    btn.onclick = () => {
-      state.qtyMode = btn.dataset.qty;
-      document.querySelectorAll('.qtyBtn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      if (state.qtyMode !== 'max') $('qtyInput').value = state.qtyMode;
-      playSfx('click');
-    };
-  });
-  $('qtyInput').value = '100';
-  $('qtyInput').addEventListener('focus', () => {
-    document.querySelectorAll('.qtyBtn').forEach(b => b.classList.remove('active'));
-    state.qtyMode = $('qtyInput').value;
-  });
-  $('qtyInput').addEventListener('input', () => { state.qtyMode = $('qtyInput').value; });
+  // Globe enter button
+  const geb = $('globeEnterBtn');
+  if (geb) geb.addEventListener('click', showNicknameScreen);
 
-  document.querySelectorAll('.modeBtn').forEach(btn => {
-    btn.onclick = () => { state.tradingMode = btn.dataset.mode; updateModeUI(); playSfx('click'); };
+  // Nickname screen
+  const nickInput  = $('nickInput');
+  const startBtn   = $('nickStartBtn');
+  const codeInput  = $('codeInput');
+  const loadBtn    = $('nickLoadBtn');
+
+  if (startBtn) startBtn.addEventListener('click', () => {
+    const val = (nickInput?.value||'').trim();
+    if (!val) { toast('請輸入暱稱'); return; }
+    nickname = val.slice(0,20);
+    localStorage.setItem('empire_nick', nickname);
+    startGame(null);
   });
 
-  document.querySelectorAll('.periodBtn').forEach(btn => {
-    btn.onclick = () => {
-      state.candlePeriod = parseInt(btn.dataset.period, 10);
-      document.querySelectorAll('.periodBtn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.viewOffset = 0;
-      drawChartArea();
-      playSfx('click');
-    };
+  if (loadBtn) loadBtn.addEventListener('click', () => {
+    const code = (codeInput?.value||'').trim();
+    const loaded = decodeGameState(code);
+    if (!loaded) { toast('數據碼無效'); return; }
+    nickname = loaded.n || '玩家';
+    localStorage.setItem('empire_nick', nickname);
+    selectedMkt = loaded.m || 'empire';
+    startGame(loaded);
   });
 
-  const onMa1Change = () => {
-    const v = parseInt($('ma1Input').value, 10);
-    if (!isNaN(v) && v > 0) state.ma1Period = v;
-    state.ma1On = $('ma1Toggle').checked;
-    updateMaLabels(); drawChartArea();
-  };
-  const onMa2Change = () => {
-    const v = parseInt($('ma2Input').value, 10);
-    if (!isNaN(v) && v > 0) state.ma2Period = v;
-    state.ma2On = $('ma2Toggle').checked;
-    updateMaLabels(); drawChartArea();
-  };
-  $('ma1Input').addEventListener('input', onMa1Change);
-  $('ma1Toggle').addEventListener('change', onMa1Change);
-  $('ma2Input').addEventListener('input', onMa2Change);
-  $('ma2Toggle').addEventListener('change', onMa2Change);
+  // Top bar actions
+  const calBtn = $('calendarBtn');
+  if (calBtn) calBtn.addEventListener('click',()=>{ openOverlay('calendarOverlay'); updateCalendarUI(); playSfx('click'); });
+  const ordBtn = $('ordersBtn');
+  if (ordBtn) ordBtn.addEventListener('click',()=>{ openOverlay('ordersOverlay'); updateOrdersUI(); playSfx('click'); });
+  const indBtn = $('indicatorBtn');
+  if (indBtn) indBtn.addEventListener('click',()=>{ openOverlay('indicatorOverlay'); playSfx('click'); });
+  const muteBtn = $('muteBtn');
+  if (muteBtn) muteBtn.addEventListener('click', toggleMute);
+  const lbBtn = $('leaderboardBtn');
+  if (lbBtn) lbBtn.addEventListener('click',()=>{ openOverlay('leaderboardOverlay'); playSfx('click'); });
 
-  $('buyBtn').onclick = buy;
-  $('sellBtn').onclick = sell;
-  $('muteBtn').onclick = toggleMute;
-  $('indicatorBtn').onclick = () => { openOverlay('indicatorOverlay'); playSfx('click'); };
-  $('ordersBtn').onclick = () => { updateOrdersUI(); openOverlay('ordersOverlay'); playSfx('click'); };
-  $('calendarBtn').onclick = () => { updateCalendarUI(); openOverlay('calendarOverlay'); playSfx('click'); };
-  $('restartBtn').onclick = () => location.reload();
-  $('startBtn').onclick = startGame;
-
+  // Close overlays
   document.querySelectorAll('.overlayClose').forEach(b => {
-    b.onclick = () => { closeOverlay(b.dataset.close); playSfx('click'); };
+    b.addEventListener('click',()=>closeOverlay(b.dataset.close));
   });
   document.querySelectorAll('.overlay').forEach(o => {
-    o.addEventListener('click', (e) => { if (e.target === o) o.classList.add('hidden'); });
+    o.addEventListener('click', e=>{ if(e.target===o) closeOverlay(o.id); });
+  });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape') document.querySelectorAll('.overlay').forEach(o=>o.classList.add('hidden')); });
+
+  // Trade buttons
+  const buyBtn  = $('buyBtn');
+  const sellBtn = $('sellBtn');
+  if (buyBtn)  buyBtn.addEventListener('click',  buy);
+  if (sellBtn) sellBtn.addEventListener('click', sell);
+
+  // Qty buttons
+  document.querySelectorAll('.qtyBtn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.qtyBtn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      const v = b.dataset.qty;
+      state.qtyMode = v==='max' ? 'max' : parseInt(v);
+      const qi=$('qtyInput'); if(qi) qi.value='';
+    });
+  });
+  const qtyInput=$('qtyInput');
+  if (qtyInput) qtyInput.addEventListener('input',()=>{
+    document.querySelectorAll('.qtyBtn').forEach(x=>x.classList.remove('active'));
+    state.qtyMode=parseInt(qtyInput.value)||100;
   });
 
-  // 委託 / 日曆 / log 分頁
-  document.querySelectorAll('[data-tab]').forEach(t => {
-    t.onclick = () => {
-      document.querySelectorAll('[data-tab]').forEach(b => b.classList.remove('active'));
-      t.classList.add('active');
-      const tab = t.dataset.tab;
-      $('pendingTab').classList.toggle('hidden', tab !== 'pending');
-      $('historyTab').classList.toggle('hidden', tab !== 'history');
-      playSfx('click');
-    };
+  // Mode buttons
+  document.querySelectorAll('.modeBtn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.modeBtn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      state.tradingMode=b.dataset.mode;
+      const lr=$('limitPriceRow');
+      if (lr) lr.classList.toggle('hidden', state.tradingMode!=='limit');
+    });
   });
-  document.querySelectorAll('[data-caltab]').forEach(t => {
-    t.onclick = () => {
-      document.querySelectorAll('[data-caltab]').forEach(b => b.classList.remove('active'));
-      t.classList.add('active');
-      const tab = t.dataset.caltab;
-      $('upcomingTab').classList.toggle('hidden', tab !== 'upcoming');
-      $('pastTab').classList.toggle('hidden', tab !== 'past');
-      playSfx('click');
-    };
+
+  // Tab buttons (overlay)
+  document.querySelectorAll('.tabBtn[data-tab]').forEach(b => {
+    b.addEventListener('click', () => {
+      const panel = b.closest('.overlayPanel');
+      panel?.querySelectorAll('.tabBtn[data-tab]').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      const tab = b.dataset.tab;
+      panel?.querySelectorAll('.tabPane').forEach(p=>p.classList.add('hidden'));
+      panel?.querySelector('#'+tab+'Tab')?.classList.remove('hidden');
+    });
   });
-  document.querySelectorAll('[data-logtab]').forEach(t => {
-    t.onclick = () => {
-      document.querySelectorAll('[data-logtab]').forEach(b => b.classList.remove('active'));
-      t.classList.add('active');
-      const tab = t.dataset.logtab;
-      $('logAll').classList.toggle('hidden', tab !== 'all');
-      $('logTrade').classList.toggle('hidden', tab !== 'trade');
-      $('logNews').classList.toggle('hidden', tab !== 'news');
-      state.logTab = tab;
-      playSfx('click');
-    };
+
+  // Calendar tabs
+  document.querySelectorAll('.tabBtn[data-caltab]').forEach(b => {
+    b.addEventListener('click', () => {
+      const panel=b.closest('.overlayPanel');
+      panel?.querySelectorAll('.tabBtn[data-caltab]').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      panel?.querySelectorAll('.tabPane').forEach(p=>p.classList.add('hidden'));
+      panel?.querySelector('#'+b.dataset.caltab+'Tab')?.classList.remove('hidden');
+    });
   });
-  // log 展開/收合
-  $('logToggleBtn').onclick = () => {
-    state.logExpanded = !state.logExpanded;
-    $('logPanel').classList.toggle('expanded', state.logExpanded);
-    $('logPanel').classList.toggle('collapsed', !state.logExpanded);
+
+  // Log tabs
+  document.querySelectorAll('.tabBtn[data-logtab]').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.tabBtn[data-logtab]').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      state.logTab=b.dataset.logtab;
+      document.querySelectorAll('.logList').forEach(l=>l.classList.add('hidden'));
+      const target=$('log'+state.logTab.charAt(0).toUpperCase()+state.logTab.slice(1));
+      if(target) target.classList.remove('hidden');
+    });
+  });
+
+  // Log toggle
+  const ltBtn=$('logToggleBtn');
+  if (ltBtn) ltBtn.addEventListener('click',()=>{
+    state.logExpanded=!state.logExpanded;
+    $('logPanel').classList.toggle('expanded',state.logExpanded);
+    $('logPanel').classList.toggle('collapsed',!state.logExpanded);
     playSfx('pageFlip');
-  };
-
-  window.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
-    if (!state.started) return;
-    if (e.key === 'b' || e.key === 'B') buy();
-    if (e.key === 's' || e.key === 'S') sell();
-    if (e.key === 'Escape') {
-      document.querySelectorAll('.overlay:not(.hidden)').forEach(o => o.classList.add('hidden'));
-    }
   });
 
-  setupBGM();
-  setupChartGesture();
-  updateMaLabels();
-  updateModeUI();
+  // Restart
+  const rb=$('restartBtn');
+  if (rb) rb.addEventListener('click',()=>{
+    clearInterval(_tickInterval); _tickInterval=null;
+    resetGameState();
+    $('winScreen').classList.add('hidden');
+    LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0;
+    warmup(); startTick(); maybeUpdatePanel(true);
+  });
+
+  // Data code
+  const dcBtn=$('dataCodeBtn');
+  if (dcBtn) dcBtn.addEventListener('click', showDataCode);
+
+  // Period buttons (inside indicator overlay)
+  document.querySelectorAll('.periodBtn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.periodBtn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      state.candlePeriod=parseInt(b.dataset.period);
+      playSfx('click');
+    });
+  });
+
   maybeUpdatePanel(true);
-  drawChartArea();
-
-  // splash 動畫
-  requestAnimationFrame(drawSplashChart);
-
-  setInterval(tick, TICK_MS);
-  setInterval(subtick, SUBTICK_MS);
-  window.addEventListener('resize', () => { drawChartArea(); });
-
-  // 初始 PULSE label
-  $('pulseLabel').textContent = pulseStr(currentPulse());
 }
 
-window.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', init);
+
 })();

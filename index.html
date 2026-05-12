@@ -8,164 +8,183 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=15">
+<link rel="stylesheet" href="./style.css?v=16">
 </head>
 <body>
 
-  <!-- 開場登入畫面 -->
-  <div id="splashScreen">
-    <div class="splashBg">
-      <canvas id="splashChart"></canvas>
+<!-- ===== GLOBE SCREEN ===== -->
+<div id="globeScreen" class="hidden">
+  <div class="globeStars" id="globeStars"></div>
+  <canvas id="globeCanvas"></canvas>
+  <div class="globeOverlay">
+    <div class="globeTitle">EMPIRE INDEX</div>
+    <div class="globeSub">選擇交易市場</div>
+    <div id="globeMarketInfo" class="globeMarketInfo hidden"></div>
+    <button id="globeEnterBtn" class="globeEnterBtn hidden">進入市場</button>
+  </div>
+</div>
+
+<!-- ===== NICKNAME SCREEN ===== -->
+<div id="nicknameScreen" class="hidden">
+  <div class="nickCard">
+    <div class="nickTitle">設定玩家資料</div>
+    <div class="nickSection">
+      <div class="nickLabel">暱稱</div>
+      <input id="nickInput" class="nickInputField" type="text" maxlength="20" placeholder="輸入你的暱稱">
+      <button id="nickStartBtn" class="nickBtn primary">開始交易</button>
     </div>
-    <div class="splashInner">
-      <div class="splashRibbon">EMPIRE TRADING SIMULATOR</div>
-      <h1 class="splashTitle">EMPIRE<br>INDEX</h1>
-      <div class="splashTag">虛擬貨幣交易模擬市場</div>
-      <div class="splashGoal">
-        <span class="splashGoalAmt">$10,000</span>
-        <span class="splashArrow">→</span>
-        <span class="splashGoalTarget">$50,000</span>
+    <div class="nickDivider">或</div>
+    <div class="nickSection">
+      <div class="nickLabel">載入數據碼</div>
+      <input id="codeInput" class="nickInputField" type="text" placeholder="貼上 EPC-XXXXXX">
+      <button id="nickLoadBtn" class="nickBtn secondary">載入存檔</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MAIN GAME ===== -->
+<div id="app" class="hidden">
+
+  <header id="topBar">
+    <div class="brandRow">
+      <div class="brand">
+        <span class="brandSymbol">EPC</span>
+        <span class="brandName">Empire 指數</span>
+        <span class="dot live"></span>
+        <span class="brandPulse" id="pulseLabel">DAY 0000</span>
       </div>
-      <div class="splashGoalText">每 5 秒推進 1 天 · 市價 / 限價委託 · 日曆預告事件</div>
-      <button id="startBtn" class="splashStart">進&nbsp;&nbsp;場&nbsp;&nbsp;交&nbsp;&nbsp;易</button>
-      <div class="splashVer">v0.6</div>
+      <div class="topActions">
+        <button id="leaderboardBtn" title="排行榜">榜</button>
+        <button id="calendarBtn" title="日曆">日曆</button>
+        <button id="ordersBtn" title="委託明細">委託</button>
+        <button id="indicatorBtn" title="指標選單">指標</button>
+        <button id="muteBtn" title="切換音樂">♪</button>
+      </div>
+    </div>
+
+    <div id="positionPanel">
+      <div class="posMain">
+        <div class="posMainLeft">
+          <div class="posLiveLabel">即時價位</div>
+          <div class="posPriceRow">
+            <span class="posValue" id="priceNow">100.00</span>
+            <span class="posTick" id="priceChange">+0.00 (+0.00%)</span>
+          </div>
+        </div>
+        <div class="posMainRight">
+          <span class="posMiniLabel" id="unrealPnlLabel">未實現</span>
+          <span class="posPnl" id="unrealPnlAmount">--</span>
+          <span class="posTick" id="unrealPnlPct"></span>
+        </div>
+      </div>
+      <div class="posSub">
+        <div class="posCell"><span class="posK">現金</span><span class="posV" id="cashLabel">10,000</span></div>
+        <div class="posCell"><span class="posK">持倉</span><span class="posV" id="sharesLabel">0</span></div>
+        <div class="posCell"><span class="posK">成本</span><span class="posV" id="avgCostLabel">--</span></div>
+        <div class="posCell"><span class="posK">已實現</span><span class="posV" id="realPnlLabel">+0</span></div>
+        <div class="posCell highlight"><span class="posK">總資產</span><span class="posV" id="equityLabel">10,000</span></div>
+      </div>
+    </div>
+
+    <div class="goalRow">
+      <div class="goalBar"><div id="goalProgress"></div></div>
+      <div class="goalText">
+        <span>目標</span><span id="goalPctLabel">20.00%</span><span>50,000</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 廣播通知 -->
+  <div id="broadcastBanner" class="broadcastBanner hidden"></div>
+
+  <!-- 排行榜浮層 -->
+  <div id="leaderboardOverlay" class="overlay hidden">
+    <div class="overlayPanel large">
+      <div class="overlayHeader">
+        <span class="overlayTitle">即時排行榜</span>
+        <button class="overlayClose" data-close="leaderboardOverlay">✕</button>
+      </div>
+      <div id="leaderboardList" class="lbList"><div class="lbEmpty">載入中...</div></div>
+      <div class="lbFooter">
+        <button id="dataCodeBtn" class="lbCodeBtn">生成數據碼</button>
+        <textarea id="dataCodeOutput" class="lbCodeOutput" readonly placeholder="點擊上方按鈕生成..."></textarea>
+      </div>
     </div>
   </div>
 
-  <div id="app">
-    <div id="mainArea">
-    <header id="topBar">
-      <div class="brandRow">
-        <div class="brand">
-          <span class="brandSymbol">EPC</span>
-          <span class="brandName">Empire 指數</span>
-          <span class="dot live"></span>
-          <span class="brandPulse" id="pulseLabel">DAY 0000</span>
-        </div>
-        <div class="topActions">
-          <button id="calendarBtn" title="日曆">日曆</button>
-          <button id="ordersBtn" title="委託明細">委託</button>
-          <button id="indicatorBtn" title="指標選單">指標</button>
-          <button id="muteBtn" title="切換音樂">♪</button>
+  <!-- 指標浮層 -->
+  <div id="indicatorOverlay" class="overlay hidden">
+    <div class="overlayPanel">
+      <div class="overlayHeader">
+        <span class="overlayTitle">指標設定</span>
+        <button class="overlayClose" data-close="indicatorOverlay">✕</button>
+      </div>
+      <div class="drawerRow">
+        <div class="drawerLabel">K 線週期</div>
+        <div class="drawerControls">
+          <button class="periodBtn active" data-period="5">1 天</button>
+          <button class="periodBtn" data-period="15">3 天</button>
+          <button class="periodBtn" data-period="30">6 天</button>
+          <button class="periodBtn" data-period="60">12 天</button>
         </div>
       </div>
-
-      <!-- 倉位資訊面板（v0.6 壓縮版） -->
-      <div id="positionPanel">
-        <div class="posMain">
-          <div class="posMainLeft">
-            <div class="posLiveLabel">即時價位</div>
-          <div class="posPriceRow">
-              <span class="posValue" id="priceNow">100.00</span>
-              <span class="posTick" id="priceChange">+0.00 (+0.00%)</span>
-            </div>
-          </div>
-          <div class="posMainRight">
-            <span class="posMiniLabel" id="unrealPnlLabel">未實現</span>
-            <span class="posPnl" id="unrealPnlAmount">--</span>
-            <span class="posTick" id="unrealPnlPct"></span>
-          </div>
-        </div>
-        <div class="posSub">
-          <div class="posCell"><span class="posK">現金</span><span class="posV" id="cashLabel">10,000</span></div>
-          <div class="posCell"><span class="posK">持倉</span><span class="posV" id="sharesLabel">0</span></div>
-          <div class="posCell"><span class="posK">成本</span><span class="posV" id="avgCostLabel">--</span></div>
-          <div class="posCell"><span class="posK">已實現</span><span class="posV" id="realPnlLabel">+0</span></div>
-          <div class="posCell highlight"><span class="posK">總資產</span><span class="posV" id="equityLabel">10,000</span></div>
+      <div class="drawerRow">
+        <div class="drawerLabel">均線 1</div>
+        <div class="drawerControls">
+          <input type="number" id="ma1Input" min="1" max="200" value="5" class="maInput">
+          <span class="maColorDot ma1Color"></span>
+          <label class="switch"><input type="checkbox" id="ma1Toggle" checked><span class="slider"></span></label>
         </div>
       </div>
-
-      <div class="goalRow">
-        <div class="goalBar"><div id="goalProgress"></div></div>
-        <div class="goalText">
-          <span>目標</span>
-          <span id="goalPctLabel">20.00%</span>
-          <span>50,000</span>
-        </div>
-      </div>
-    </header>
-
-    <!-- 指標浮層 -->
-    <div id="indicatorOverlay" class="overlay hidden">
-      <div class="overlayPanel">
-        <div class="overlayHeader">
-          <span class="overlayTitle">指標設定</span>
-          <button class="overlayClose" data-close="indicatorOverlay">✕</button>
-        </div>
-        <div class="drawerRow">
-          <div class="drawerLabel">K 線週期</div>
-          <div class="drawerControls">
-            <button class="periodBtn active" data-period="5">1 天</button>
-            <button class="periodBtn" data-period="15">3 天</button>
-            <button class="periodBtn" data-period="30">6 天</button>
-            <button class="periodBtn" data-period="60">12 天</button>
-          </div>
-        </div>
-        <div class="drawerRow">
-          <div class="drawerLabel">均線 1</div>
-          <div class="drawerControls">
-            <input type="number" id="ma1Input" min="1" max="200" value="5" class="maInput">
-            <span class="maColorDot ma1Color"></span>
-            <label class="switch"><input type="checkbox" id="ma1Toggle" checked><span class="slider"></span></label>
-          </div>
-        </div>
-        <div class="drawerRow">
-          <div class="drawerLabel">均線 2</div>
-          <div class="drawerControls">
-            <input type="number" id="ma2Input" min="1" max="200" value="20" class="maInput">
-            <span class="maColorDot ma2Color"></span>
-            <label class="switch"><input type="checkbox" id="ma2Toggle" checked><span class="slider"></span></label>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- 委託明細浮層 -->
-    <div id="ordersOverlay" class="overlay hidden">
-      <div class="overlayPanel large">
-        <div class="overlayHeader">
-          <span class="overlayTitle">委託明細</span>
-          <button class="overlayClose" data-close="ordersOverlay">✕</button>
-        </div>
-        <div class="tabRow">
-          <button class="tabBtn active" data-tab="pending">待成交</button>
-          <button class="tabBtn" data-tab="history">歷史成交</button>
-        </div>
-        <div id="pendingTab" class="tabPane">
-          <div id="pendingList" class="orderList"><div class="orderEmpty">尚無掛單</div></div>
-        </div>
-        <div id="historyTab" class="tabPane hidden">
-          <div id="historyList" class="orderList"><div class="orderEmpty">尚無歷史</div></div>
+      <div class="drawerRow">
+        <div class="drawerLabel">均線 2</div>
+        <div class="drawerControls">
+          <input type="number" id="ma2Input" min="1" max="200" value="20" class="maInput">
+          <span class="maColorDot ma2Color"></span>
+          <label class="switch"><input type="checkbox" id="ma2Toggle" checked><span class="slider"></span></label>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- 日曆浮層 -->
-    <div id="calendarOverlay" class="overlay hidden">
-      <div class="overlayPanel large">
-        <div class="overlayHeader">
-          <span class="overlayTitle">市場日曆</span>
-          <button class="overlayClose" data-close="calendarOverlay">✕</button>
-        </div>
-        <div class="calNow">
-          <span class="calNowLabel">現在</span>
-          <span class="calNowVal" id="calCurrentPulse">DAY 0000</span>
-        </div>
-        <div class="tabRow">
-          <button class="tabBtn active" data-caltab="upcoming">未來預告</button>
-          <button class="tabBtn" data-caltab="past">已發生</button>
-        </div>
-        <div id="upcomingTab" class="tabPane">
-          <div id="upcomingList" class="calList"><div class="orderEmpty">尚無預告</div></div>
-        </div>
-        <div id="pastTab" class="tabPane hidden">
-          <div id="pastList" class="calList"><div class="orderEmpty">尚無紀錄</div></div>
-        </div>
+  <!-- 委託明細浮層 -->
+  <div id="ordersOverlay" class="overlay hidden">
+    <div class="overlayPanel large">
+      <div class="overlayHeader">
+        <span class="overlayTitle">委託明細</span>
+        <button class="overlayClose" data-close="ordersOverlay">✕</button>
       </div>
+      <div class="tabRow">
+        <button class="tabBtn active" data-tab="pending">待成交</button>
+        <button class="tabBtn" data-tab="history">歷史成交</button>
+      </div>
+      <div id="pendingTab" class="tabPane"><div id="pendingList" class="orderList"><div class="orderEmpty">尚無掛單</div></div></div>
+      <div id="historyTab" class="tabPane hidden"><div id="historyList" class="orderList"><div class="orderEmpty">尚無歷史</div></div></div>
     </div>
+  </div>
 
-    <!-- 主圖區 -->
+  <!-- 日曆浮層 -->
+  <div id="calendarOverlay" class="overlay hidden">
+    <div class="overlayPanel large">
+      <div class="overlayHeader">
+        <span class="overlayTitle">市場日曆</span>
+        <button class="overlayClose" data-close="calendarOverlay">✕</button>
+      </div>
+      <div class="calNow">
+        <span class="calNowLabel">現在</span>
+        <span class="calNowVal" id="calCurrentPulse">DAY 0000</span>
+      </div>
+      <div class="tabRow">
+        <button class="tabBtn active" data-caltab="upcoming">未來預告</button>
+        <button class="tabBtn" data-caltab="past">已發生</button>
+      </div>
+      <div id="upcomingTab" class="tabPane"><div id="upcomingList" class="calList"><div class="orderEmpty">尚無預告</div></div></div>
+      <div id="pastTab" class="tabPane hidden"><div id="pastList" class="calList"><div class="orderEmpty">尚無紀錄</div></div></div>
+    </div>
+  </div>
+
+  <!-- mainArea: chart + log (log is absolute inside) -->
+  <div id="mainArea">
     <section id="chartPanel">
       <div class="chartHeader">
         <div class="legendRow">
@@ -174,15 +193,11 @@
         </div>
         <button id="resetViewBtn" class="resetBtn hidden">回到最新</button>
       </div>
-      <div class="chartBody">
-        <canvas id="priceChart"></canvas>
-      </div>
+      <div class="chartBody"><canvas id="priceChart"></canvas></div>
       <div class="timeAxis" id="timeAxis"></div>
     </section>
 
-
-
-    <!-- Log（分頁、可展開） -->
+    <!-- Log (absolute inside mainArea) -->
     <section id="logPanel" class="collapsed">
       <div class="logHeader">
         <div class="tabRow logTabs">
@@ -198,44 +213,45 @@
         <div id="logNews" class="logList hidden"></div>
       </div>
     </section>
-
-    </div><!-- /mainArea -->
-
-    <!-- 操作區 -->
-    <section id="tradePanel">
-      <div class="modeRow">
-        <button class="modeBtn active" data-mode="market">市價</button>
-        <button class="modeBtn" data-mode="limit">限價</button>
-      </div>
-      <div class="qtyRow">
-        <button class="qtyBtn" data-qty="10">10</button>
-        <button class="qtyBtn active" data-qty="100">100</button>
-        <button class="qtyBtn" data-qty="1000">1K</button>
-        <button class="qtyBtn" data-qty="max">全倉</button>
-        <input id="qtyInput" type="number" min="1" inputmode="numeric" placeholder="自訂">
-      </div>
-      <div class="limitPriceRow hidden" id="limitPriceRow">
-        <span class="limitLabel">目標價</span>
-        <input id="limitPriceInput" type="number" step="0.01" min="0.01" inputmode="decimal">
-      </div>
-      <div class="btnRow">
-        <button id="buyBtn" class="bigBtn buy">買 入</button>
-        <button id="sellBtn" class="bigBtn sell">賣 出</button>
-      </div>
-    </section>
-
-
-    <div id="winScreen" class="hidden">
-      <div class="winInner">
-        <div class="winRibbon">CONGRATULATIONS</div>
-        <h1>達成 5 萬</h1>
-        <p>用時 <span id="winTime"></span>，共 <span id="winTrades"></span> 筆交易</p>
-        <button id="restartBtn" class="bigBtn buy">再來一局</button>
-      </div>
-    </div>
-
-    <div id="toast" class="hidden"></div>
   </div>
-  <script src="./game.js?v=15"></script>
+
+  <!-- Trade panel (always visible, outside mainArea) -->
+  <section id="tradePanel">
+    <div class="modeRow">
+      <button class="modeBtn active" data-mode="market">市價</button>
+      <button class="modeBtn" data-mode="limit">限價</button>
+    </div>
+    <div class="qtyRow">
+      <button class="qtyBtn" data-qty="10">10</button>
+      <button class="qtyBtn active" data-qty="100">100</button>
+      <button class="qtyBtn" data-qty="1000">1K</button>
+      <button class="qtyBtn" data-qty="max">全倉</button>
+      <input id="qtyInput" type="number" min="1" inputmode="numeric" placeholder="自訂">
+    </div>
+    <div class="limitPriceRow hidden" id="limitPriceRow">
+      <span class="limitLabel">目標價</span>
+      <input id="limitPriceInput" type="number" step="0.01" min="0.01" inputmode="decimal">
+    </div>
+    <div class="btnRow">
+      <button id="buyBtn" class="bigBtn buy">買 入</button>
+      <button id="sellBtn" class="bigBtn sell">賣 出</button>
+    </div>
+  </section>
+
+  <div id="winScreen" class="hidden">
+    <div class="winInner">
+      <div class="winRibbon">CONGRATULATIONS</div>
+      <h1>達成 5 萬</h1>
+      <p>用時 <span id="winTime"></span>，共 <span id="winTrades"></span> 筆交易</p>
+      <button id="restartBtn" class="bigBtn buy">再來一局</button>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="./game.js?v=16"></script>
 </body>
 </html>
