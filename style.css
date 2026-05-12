@@ -36,7 +36,13 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   width: 100%; height: 100%;
   max-width: 480px; margin: 0 auto;
   display: flex; flex-direction: column;
-  gap: 6px; padding: 8px 8px 0; position: relative; overflow: hidden;
+  gap: 6px; padding: 8px 8px 8px; position: relative; overflow: hidden;
+}
+#mainArea {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  gap: 6px;
+  position: relative; overflow: hidden;
 }
 
 /* ============================================================
@@ -559,19 +565,23 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
    LOG PANEL (分頁 + 可展開)
    ============================================================ */
 #logPanel {
-  /* flex item：高度動畫，不覆蓋買賣按鈕 */
+  /* 在 #mainArea 內 absolute — 只覆蓋 chart，不蓋 tradePanel */
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 244px;
   background: var(--panel);
   border: 1px solid var(--border-3);
+  border-bottom: none;
   border-radius: 8px 8px 0 0;
   display: flex; flex-direction: column;
   overflow: hidden;
-  flex-shrink: 0;
-  height: 38px;   /* collapsed：只露 header */
-  transition: height 0.32s cubic-bezier(0.15, 0.8, 0.25, 1);
-  box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+  z-index: 50;
+  transform: translateY(calc(100% - 38px));
+  transition: transform 0.32s cubic-bezier(0.15, 0.8, 0.25, 1);
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
 }
 #logPanel.expanded {
-  height: 220px;
+  transform: translateY(0);
   box-shadow: 0 -6px 32px rgba(0,0,0,0.7), 0 0 24px rgba(41,98,255,0.08);
 }
 .logHeader {

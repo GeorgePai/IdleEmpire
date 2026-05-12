@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=12">
+<link rel="stylesheet" href="./style.css?v=13">
 </head>
 <body>
 
@@ -33,6 +33,7 @@
   </div>
 
   <div id="app">
+    <div id="mainArea">
     <header id="topBar">
       <div class="brandRow">
         <div class="brand">
@@ -195,6 +196,26 @@
       </div>
     </section>
 
+
+    <!-- Log（分頁、可展開） -->
+    <section id="logPanel" class="collapsed">
+      <div class="logHeader">
+        <div class="tabRow logTabs">
+          <button class="tabBtn active" data-logtab="all">全部</button>
+          <button class="tabBtn" data-logtab="trade">交易</button>
+          <button class="tabBtn" data-logtab="news">新聞</button>
+        </div>
+        <button id="logToggleBtn" class="logToggle" title="展開/收合">▾</button>
+      </div>
+      <div id="logBody" class="logBody">
+        <div id="logAll" class="logList"></div>
+        <div id="logTrade" class="logList hidden"></div>
+        <div id="logNews" class="logList hidden"></div>
+      </div>
+    </section>
+
+    </div><!-- /mainArea -->
+
     <!-- 操作區 -->
     <section id="tradePanel">
       <div class="modeRow">
@@ -218,22 +239,6 @@
       </div>
     </section>
 
-    <!-- Log（分頁、可展開） -->
-    <section id="logPanel" class="collapsed">
-      <div class="logHeader">
-        <div class="tabRow logTabs">
-          <button class="tabBtn active" data-logtab="all">全部</button>
-          <button class="tabBtn" data-logtab="trade">交易</button>
-          <button class="tabBtn" data-logtab="news">新聞</button>
-        </div>
-        <button id="logToggleBtn" class="logToggle" title="展開/收合">▾</button>
-      </div>
-      <div id="logBody" class="logBody">
-        <div id="logAll" class="logList"></div>
-        <div id="logTrade" class="logList hidden"></div>
-        <div id="logNews" class="logList hidden"></div>
-      </div>
-    </section>
 
     <div id="winScreen" class="hidden">
       <div class="winInner">
@@ -246,6 +251,6 @@
 
     <div id="toast" class="hidden"></div>
   </div>
-  <script src="./game.js?v=12"></script>
+  <script src="./game.js?v=13"></script>
 </body>
 </html>
