@@ -266,7 +266,10 @@ function toast(msg) {
 /* ============================================================
    SEED-BASED PRNG (synchronized price across all clients)
    ============================================================ */
-const SYNC_DAY_MS = 24 * 3600 * 1000;
+const GAME_EPOCH_MS  = 1748736000000; // 2025-06-01 00:00 UTC — fixed cross-device epoch
+const PULSE_MS       = 5000;           // 1 game day = 5 real seconds
+const TICKS_PER_DAY  = PULSE_MS / TICK_MS; // 25 ticks per game day
+const HISTORY_DAYS   = 30;             // show 30 game days of K-bar history
 
 function mulberry32(seed) {
   let s = seed >>> 0;
@@ -279,8 +282,11 @@ function mulberry32(seed) {
 }
 
 function getMarketDaySeed(mktId) {
-  const day = Math.floor(Date.now() / SYNC_DAY_MS);
-  let h = (day * 0x9e3779b9) >>> 0;
+  // Seed from the start of the 30-day history window — two clients at same moment
+  // compute same gameDay → same startDay → same seed → identical price history.
+  const gameDay  = Math.floor(Math.max(0, Date.now() - GAME_EPOCH_MS) / PULSE_MS);
+  const startDay = Math.max(0, gameDay - HISTORY_DAYS);
+  let h = (startDay * 0x9e3779b9) >>> 0;
   for (let i = 0; i < mktId.length; i++) {
     h = Math.imul(h ^ mktId.charCodeAt(i), 0x85ebca77);
     h = ((h << 13) | (h >>> 19)) >>> 0;
@@ -311,35 +317,43 @@ let _closedUpToGi  = {}; // period → last gi that has been frozen
 
 function initSyncedPrices(mktId) {
   const m = MARKETS[mktId];
-  const seed = getMarketDaySeed(mktId);
+  const now = Date.now();
+  // epoch-based ticks and game-day index
+  const totalAbsTick = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / TICK_MS);
+  const gameDay      = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / PULSE_MS);
+  const startDay     = Math.max(0, gameDay - HISTORY_DAYS);
+  const histStartTick = startDay * TICKS_PER_DAY;
+  const relTick      = totalAbsTick - histStartTick; // ≤ 750 steps — never huge
+
+  const seed = getMarketDaySeed(mktId); // seeded from startDay
   const rng  = mulberry32(seed);
-  const absTick = Math.floor((Date.now() % SYNC_DAY_MS) / TICK_MS);
-  const histStart = Math.max(0, absTick - 600);
 
   let price = m.base;
-  for (let t = 0; t < histStart; t++) price = seededGBMStep(rng, price, m);
-
   state.prices = [];
-  for (let t = histStart; t <= absTick; t++) {
+  for (let t = 0; t <= relTick; t++) {
     price = seededGBMStep(rng, price, m);
     const prev = state.prices.length ? state.prices[state.prices.length-1].p : m.base;
-    const chg = Math.abs(price - prev) / (prev||1);
-    state.prices.push({ t: t-histStart, p: +price.toFixed(4),
+    const chg  = Math.abs(price - prev) / (prev || 1);
+    state.prices.push({ t, p: +price.toFixed(4),
                         v: Math.round(800 + chg*80000 + Math.random()*500) });
   }
-  state.tick = absTick - histStart;
+  state.tick = relTick;
   priceRng = rng;
   _closedCandles = {};
-  _closedUpToGi = {};
+  _closedUpToGi  = {};
 }
 
 function getSeedCurrentPrice(mktId) {
   const m = MARKETS[mktId];
+  const now = Date.now();
+  const totalAbsTick = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / TICK_MS);
+  const gameDay      = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / PULSE_MS);
+  const startDay     = Math.max(0, gameDay - HISTORY_DAYS);
   const seed = getMarketDaySeed(mktId);
-  const rng = mulberry32(seed);
-  const absTick = Math.floor((Date.now() % SYNC_DAY_MS) / TICK_MS);
+  const rng  = mulberry32(seed);
+  const relTick = totalAbsTick - startDay * TICKS_PER_DAY;
   let price = m.base;
-  for (let t = 0; t < absTick; t++) price = seededGBMStep(rng, price, m);
+  for (let t = 0; t < relTick; t++) price = seededGBMStep(rng, price, m);
   return price;
 }
 
@@ -1007,7 +1021,7 @@ function setupChartGesture() {
       const all=buildCandles(state.candlePeriod);
       const cw=c.getBoundingClientRect().width/VISIBLE_CANDLES_BASE;
       // swipe left (dx<0)=scroll toward history, swipe right=back to live
-      state.viewOffset=Math.max(0,Math.min(all.length-VISIBLE_CANDLES_BASE, startOff-dx/cw));
+      state.viewOffset=Math.max(0,Math.min(all.length-VISIBLE_CANDLES_BASE, startOff+dx/cw));
       state.pinned=(state.viewOffset<=0);
       const rb=$('resetViewBtn');
       if (rb) rb.classList.toggle('hidden', state.pinned);
@@ -1455,9 +1469,9 @@ function warmup() {
 }
 function startTick() {
   if (_tickInterval) clearInterval(_tickInterval);
-  _lastAbsTick = Math.floor((Date.now() % SYNC_DAY_MS) / TICK_MS);
+  _lastAbsTick = Math.floor(Math.max(0, Date.now() - GAME_EPOCH_MS) / TICK_MS);
   _tickInterval = setInterval(() => {
-    const nowAbs = Math.floor((Date.now() % SYNC_DAY_MS) / TICK_MS);
+    const nowAbs = Math.floor(Math.max(0, Date.now() - GAME_EPOCH_MS) / TICK_MS);
     const missed = Math.min(nowAbs - _lastAbsTick, 5);
     for (let i = 0; i < missed; i++) tick();
     _lastAbsTick = nowAbs;
