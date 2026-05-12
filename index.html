@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=14">
+<link rel="stylesheet" href="./style.css?v=15">
 </head>
 <body>
 
@@ -117,12 +117,7 @@
             <label class="switch"><input type="checkbox" id="ma2Toggle" checked><span class="slider"></span></label>
           </div>
         </div>
-        <div class="drawerRow">
-          <div class="drawerLabel">副圖</div>
-          <div class="drawerControls">
-            <label class="checkbox"><input type="checkbox" id="volToggle"><span>成交量</span></label>
-          </div>
-        </div>
+
       </div>
     </div>
 
@@ -185,16 +180,6 @@
       <div class="timeAxis" id="timeAxis"></div>
     </section>
 
-    <!-- 副圖：成交量 -->
-    <section id="subPanels" class="hidden">
-      <div class="subBox" id="volBox">
-        <div class="subHeader">
-          <span class="subTitle">成交量</span>
-          <span class="subVal numfont" id="volNowLabel">--</span>
-        </div>
-        <canvas id="volChart"></canvas>
-      </div>
-    </section>
 
 
     <!-- Log（分頁、可展開） -->
@@ -251,6 +236,6 @@
 
     <div id="toast" class="hidden"></div>
   </div>
-  <script src="./game.js?v=14"></script>
+  <script src="./game.js?v=15"></script>
 </body>
 </html>

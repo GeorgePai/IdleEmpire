@@ -83,7 +83,6 @@ const state = {
   candlePeriod: 5,
   ma1Period: 5, ma1On: true,
   ma2Period: 20, ma2On: true,
-  showVol: false,
 
   viewOffset: 0,
   yScaleMult: 1,
@@ -343,7 +342,6 @@ function maybeUpdatePanel(force = false) {
   $('goalProgress').style.width = goalPct + '%';
   $('goalPctLabel').textContent = goalPct.toFixed(2) + '%';
 
-  if (state.showVol) $('volNowLabel').textContent = state.prices[state.prices.length-1].v.toLocaleString();
 }
 
 function subtick() {
@@ -359,7 +357,6 @@ function subtick() {
 function drawChartArea() {
   if (!state.prices.length) return;
   drawCandleChart();
-  if (state.showVol) drawVolChart();
 }
 
 function setCanvas(c) {
@@ -558,27 +555,6 @@ function renderTimeAxis(candles) {
     return `<span style="left:${px}px">D${String(pulse).padStart(4,'0')}</span>`;
   }).join('');
   el.innerHTML = html;
-}
-
-function drawVolChart() {
-  const c = $('volChart');
-  const { ctx, W, H } = setCanvas(c);
-  const all = buildCandles(state.candlePeriod);
-  const N = VISIBLE_CANDLES_BASE;
-  const endIdx = Math.max(N, all.length - state.viewOffset);
-  const startIdx = Math.max(0, endIdx - N);
-  const candles = all.slice(startIdx, endIdx);
-  if (candles.length < 2) return;
-  const maxV = Math.max(...candles.map(k => k.v), 1);
-  const cw = W / candles.length;
-  const bw = Math.max(1, cw * 0.7);
-  for (let i = 0; i < candles.length; i++) {
-    const k = candles[i];
-    const h = (k.v / maxV) * (H - 2);
-    const up = k.c >= k.o;
-    ctx.fillStyle = up ? 'rgba(38,166,154,0.55)' : 'rgba(239,83,80,0.55)';
-    ctx.fillRect(i * cw + (cw - bw)/2, H - h - 1, bw, h);
-  }
 }
 
 /* ============== TRADE ============== */
@@ -911,10 +887,6 @@ function updateMaLabels() {
   $('ma2Legend').classList.toggle('hidden', !state.ma2On);
 }
 
-function updateSubPanels() {
-  $('subPanels').classList.toggle('hidden', !state.showVol);
-  drawChartArea();
-}
 
 function updateModeUI() {
   document.querySelectorAll('.modeBtn').forEach(b => {
@@ -1077,7 +1049,6 @@ function init() {
   $('ma1Toggle').addEventListener('change', onMa1Change);
   $('ma2Input').addEventListener('input', onMa2Change);
   $('ma2Toggle').addEventListener('change', onMa2Change);
-  $('volToggle').addEventListener('change', () => { state.showVol = $('volToggle').checked; updateSubPanels(); });
 
   $('buyBtn').onclick = buy;
   $('sellBtn').onclick = sell;

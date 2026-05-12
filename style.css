@@ -483,15 +483,7 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .timeAxis span:first-child { transform: translateX(0); }
 .timeAxis span:last-child { transform: translateX(-100%); }
 
-/* ============================================================
-   SUB PANELS
-   ============================================================ */
-#subPanels { display: grid; grid-template-columns: 1fr; gap: 6px; height: 70px; flex-shrink: 0; }
-.subBox { background: var(--panel); border: 1px solid var(--border-2); border-radius: 5px; padding: 5px 8px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.subHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; flex-shrink: 0; }
-.subTitle { font-size: 9px; color: var(--text-mute); letter-spacing: 2px; text-transform: uppercase; }
-.subVal { font-size: 10px; color: var(--text-mid); font-family: 'JetBrains Mono', monospace; }
-.subBox canvas { flex: 1; min-height: 0; width: 100%; display: block; }
+
 
 /* ============================================================
    TRADE PANEL
