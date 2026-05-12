@@ -708,7 +708,7 @@ function executeMarketBuy(qty, p) {
   const msg = `${pulseStr(currentPulse())} 買 ${qty} @${p.toFixed(2)} = ${fmt(cost)}`;
   addLog(msg, 'buy');
   state.orderHistory.unshift({ side:'buy', type:'market', qty, price:p, placedPulse:currentPulse() });
-  updateOrdersUI(); maybeUpdatePanel(true);
+  updateOrdersUI(); renderLog(); maybeUpdatePanel(true);
 }
 
 function executeMarketSell(qty, p) {
@@ -721,7 +721,7 @@ function executeMarketSell(qty, p) {
   const msg = `${pulseStr(currentPulse())} 賣 ${qty} @${p.toFixed(2)} PnL:${pnl>=0?'+':''}${fmt(pnl)}`;
   addLog(msg, 'sell');
   state.orderHistory.unshift({ side:'sell', type:'market', qty, price:p, placedPulse:currentPulse() });
-  updateOrdersUI(); maybeUpdatePanel(true);
+  updateOrdersUI(); renderLog(); maybeUpdatePanel(true);
 }
 
 function placeLimitOrder(side) {
@@ -732,7 +732,7 @@ function placeLimitOrder(side) {
   if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
   state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
   addLog(`掛${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
-  playSfx('orderPlace'); updateOrdersUI();
+  playSfx('orderPlace'); updateOrdersUI(); renderLog();
 }
 
 function checkPendingOrders(p) {
