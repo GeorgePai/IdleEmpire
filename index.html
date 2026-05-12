@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=21">
+<link rel="stylesheet" href="./style.css?v=22">
 </head>
 <body>
 
@@ -21,24 +21,23 @@
     <div class="globeSub">選擇交易市場</div>
     <div id="globeMarketInfo" class="globeMarketInfo hidden"></div>
     <button id="globeEnterBtn" class="globeEnterBtn hidden">進入市場</button>
+    <div id="globeCodeRow" class="globeCodeRow">
+      <input id="globeCodeInput" class="globeCodeInput" type="text" placeholder="貼上數據碼 EPC-XXXXXX">
+      <button id="globeCodeLoadBtn" class="globeCodeLoadBtn">載入</button>
+    </div>
   </div>
 </div>
 
 <!-- ===== NICKNAME SCREEN ===== -->
 <div id="nicknameScreen" class="hidden">
   <div class="nickCard">
-    <div class="nickTitle">設定玩家資料</div>
+    <div class="nickTitle">設定暱稱</div>
     <div class="nickSection">
       <div class="nickLabel">暱稱</div>
       <input id="nickInput" class="nickInputField" type="text" maxlength="20" placeholder="輸入你的暱稱">
       <button id="nickStartBtn" class="nickBtn primary">開始交易</button>
     </div>
-    <div class="nickDivider">或</div>
-    <div class="nickSection">
-      <div class="nickLabel">載入數據碼</div>
-      <input id="codeInput" class="nickInputField" type="text" placeholder="貼上 EPC-XXXXXX">
-      <button id="nickLoadBtn" class="nickBtn secondary">載入存檔</button>
-    </div>
+    <button id="nickBackBtn" class="nickBtn secondary nickBack">← 返回地球</button>
   </div>
 </div>
 
@@ -57,9 +56,7 @@
         <button id="backGlobeBtn" title="返回市場">← 市場</button>
         <button id="portfolioBtn" title="總資產覽">總覽</button>
         <button id="leaderboardBtn" title="排行榜">榜</button>
-        <button id="calendarBtn" title="日曆">日</button>
-        <button id="ordersBtn" title="委託">委</button>
-        <button id="indicatorBtn" title="指標">指</button>
+        <button id="codeBtn" title="生成存檔碼">碼</button>
         <button id="muteBtn" title="音樂">♪</button>
       </div>
     </div>
@@ -88,12 +85,6 @@
       </div>
     </div>
 
-    <div class="goalRow">
-      <div class="goalBar"><div id="goalProgress"></div></div>
-      <div class="goalText">
-        <span>目標</span><span id="goalPctLabel">20.00%</span><span>50,000</span>
-      </div>
-    </div>
   </header>
 
   <!-- 廣播通知 -->
@@ -119,6 +110,7 @@
     <div class="overlayPanel large">
       <div class="overlayHeader">
         <span class="overlayTitle">資產總覽</span>
+        <span id="portfolioNick" class="pfNick"></span>
         <button class="overlayClose" data-close="portfolioOverlay">✕</button>
       </div>
       <div id="portfolioList" class="pfList"></div>
@@ -164,41 +156,7 @@
     </div>
   </div>
 
-  <!-- 委託明細浮層 -->
-  <div id="ordersOverlay" class="overlay hidden">
-    <div class="overlayPanel large">
-      <div class="overlayHeader">
-        <span class="overlayTitle">委託明細</span>
-        <button class="overlayClose" data-close="ordersOverlay">✕</button>
-      </div>
-      <div class="tabRow">
-        <button class="tabBtn active" data-tab="pending">待成交</button>
-        <button class="tabBtn" data-tab="history">歷史成交</button>
-      </div>
-      <div id="pendingTab" class="tabPane"><div id="pendingList" class="orderList"><div class="orderEmpty">尚無掛單</div></div></div>
-      <div id="historyTab" class="tabPane hidden"><div id="historyList" class="orderList"><div class="orderEmpty">尚無歷史</div></div></div>
-    </div>
-  </div>
 
-  <!-- 日曆浮層 -->
-  <div id="calendarOverlay" class="overlay hidden">
-    <div class="overlayPanel large">
-      <div class="overlayHeader">
-        <span class="overlayTitle">市場日曆</span>
-        <button class="overlayClose" data-close="calendarOverlay">✕</button>
-      </div>
-      <div class="calNow">
-        <span class="calNowLabel">現在</span>
-        <span class="calNowVal" id="calCurrentPulse">DAY 0000</span>
-      </div>
-      <div class="tabRow">
-        <button class="tabBtn active" data-caltab="upcoming">未來預告</button>
-        <button class="tabBtn" data-caltab="past">已發生</button>
-      </div>
-      <div id="upcomingTab" class="tabPane"><div id="upcomingList" class="calList"><div class="orderEmpty">尚無預告</div></div></div>
-      <div id="pastTab" class="tabPane hidden"><div id="pastList" class="calList"><div class="orderEmpty">尚無紀錄</div></div></div>
-    </div>
-  </div>
 
   <!-- mainArea: chart + log (log is absolute inside) -->
   <div id="mainArea">
@@ -210,7 +168,10 @@
         </div>
         <button id="resetViewBtn" class="resetBtn hidden">回到最新</button>
       </div>
-      <div class="chartBody"><canvas id="priceChart"></canvas></div>
+      <div class="chartBody">
+        <canvas id="priceChart"></canvas>
+        <button id="chartIndBtn" class="chartIndBtn" title="指標設定">⚙</button>
+      </div>
       <div class="timeAxis" id="timeAxis"></div>
     </section>
 
@@ -225,6 +186,7 @@
         <button id="logToggleBtn" class="logToggle" title="展開/收合">▾</button>
       </div>
       <div id="logBody" class="logBody">
+        <div id="logPending" class="logPending"></div>
         <div id="logAll" class="logList"></div>
         <div id="logTrade" class="logList hidden"></div>
         <div id="logNews" class="logList hidden"></div>
@@ -255,6 +217,20 @@
     </div>
   </section>
 
+
+  <!-- 存檔碼浮層 -->
+  <div id="codeOverlay" class="overlay hidden">
+    <div class="overlayPanel codePanel">
+      <div class="overlayHeader">
+        <span class="overlayTitle">存檔碼</span>
+        <button class="overlayClose" data-close="codeOverlay">✕</button>
+      </div>
+      <p class="codeHint">複製此碼可在其他裝置或新遊戲中載入你的進度。</p>
+      <textarea id="dataCodeOutput" class="lbCodeOutput" readonly placeholder="點擊生成..."></textarea>
+      <button id="dataCodeBtn" class="lbCodeBtn">生成並複製</button>
+    </div>
+  </div>
+
   <div id="winScreen" class="hidden">
     <div class="winInner">
       <div class="winRibbon">CONGRATULATIONS</div>
@@ -270,6 +246,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="./game.js?v=21"></script>
+<script src="./game.js?v=22"></script>
 </body>
 </html>

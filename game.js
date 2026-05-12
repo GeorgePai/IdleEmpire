@@ -206,7 +206,7 @@ let state = {
   cash: 10000, shares: 0, avgCost: 0, realizedPnl: 0,
   candlePeriod: 5, viewOffset: 0, pinned: true,
   ma1: 5, ma2: 20, ma1On: true, ma2On: true,
-  tradingMode: 'market', qtyMode: 100,
+  tradingMode: 'market', qtyMode: 100, yZoom: 1,
   forecastEvents: [], logExpanded: false,
   logTab: 'all', showVol: false,
   // market
@@ -237,7 +237,7 @@ function resetGameState() {
     cash:10000, shares:0, avgCost:0, realizedPnl:0,
     candlePeriod:5, viewOffset:0, pinned:true,
     ma1:5, ma2:20, ma1On:true, ma2On:true,
-    tradingMode:'market', qtyMode:100,
+    tradingMode:'market', qtyMode:100, yZoom:1,
     forecastEvents:[], logExpanded:false, logTab:'all', showVol:false,
     sigma:m.sigma, drift:m.drift, basePrice:m.base,
     blackSwanProb:m.blackSwan, meanReversion:m.meanRev||0,
@@ -305,6 +305,10 @@ function seededGBMStep(rng, prev, m) {
 
 let priceRng = null;
 
+// Closed-candle cache: once a candle's period ends it is frozen
+let _closedCandles = {}; // period → sorted array of frozen OHLC
+let _closedUpToGi  = {}; // period → last gi that has been frozen
+
 function initSyncedPrices(mktId) {
   const m = MARKETS[mktId];
   const seed = getMarketDaySeed(mktId);
@@ -325,6 +329,8 @@ function initSyncedPrices(mktId) {
   }
   state.tick = absTick - histStart;
   priceRng = rng;
+  _closedCandles = {};
+  _closedUpToGi = {};
 }
 
 function getSeedCurrentPrice(mktId) {
@@ -364,6 +370,10 @@ function nextPrice(suppressNews) {
                   +state.sigma*gauss()*Math.sqrt(TICK_MS/1000));
     p = Math.max(0.01, p);
   }
+  if (state._eventBoost && state._eventBoost.ticks > 0) {
+    p *= state._eventBoost.factor;
+    state._eventBoost.ticks--;
+  }
   p = +p.toFixed(4);
   const chgPct = Math.abs(p-last)/(last||1);
   const v = Math.round(800+chgPct*80000+Math.random()*500);
@@ -374,14 +384,9 @@ function nextPrice(suppressNews) {
 }
 
 function triggerForecastEvent(ev) {
+  // Apply a drift multiplier for next ~8 ticks (no price injection — keeps OHLC deterministic)
   const impact = ev.dir === 'good' ? (0.04 + Math.random()*0.04) : -(0.04 + Math.random()*0.04);
-  const last   = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
-  const bounces = 8;
-  for (let i=0; i<bounces; i++) {
-    const f = impact * (1 - i/(bounces+1)) + gauss()*state.sigma*0.5;
-    const p2 = Math.max(0.01, +(last*(1+f*(bounces-i)/bounces)).toFixed(4));
-    state.prices.push({ t: state.tick + i, p: p2, v: Math.round(2000+Math.random()*3000) });
-  }
+  state._eventBoost = { ticks: 8, factor: 1 + impact };
   const text = ev.dir==='good'
     ? (state.newsGood[Math.floor(Math.random()*state.newsGood.length)]||'市場利好消息發酵')
     : (state.newsBad[Math.floor(Math.random()*state.newsBad.length)]||'市場利空消息衝擊');
@@ -400,7 +405,6 @@ function maybeAnnounceForecast() {
   const msg   = tmpl.replace('{N}', lead);
   state.forecastEvents.push({ dir, executePulse, msg });
   addLog('預告 ' + msg, 'event');
-  updateCalendarUI();
 }
 
 /* ============================================================
@@ -419,7 +423,6 @@ function tick() {
 
   checkPendingOrders(p);
   maybeUpdatePanel();
-  updateCalendarUI();
   $('pulseLabel').textContent = pulseStr(cp);
 
   // Firebase sync every 50 ticks (~10s)
@@ -434,16 +437,43 @@ function tick() {
    ============================================================ */
 function buildCandles(period) {
   const tpc = period / (TICK_MS/1000);
-  const map = new Map();
+  const currentGi = Math.floor(state.tick / tpc);
+
+  // Ensure per-period cache exists
+  if (!_closedCandles[period]) { _closedCandles[period] = []; _closedUpToGi[period] = -1; }
+  const closed = _closedCandles[period];
+  const upTo   = _closedUpToGi[period];
+
+  // Freeze any newly-completed candle groups (gi < currentGi and not yet frozen)
+  if (currentGi > upTo + 1) {
+    const fresh = new Map();
+    for (const td of state.prices) {
+      const gi = Math.floor(td.t / tpc);
+      if (gi >= currentGi || gi <= upTo) continue;
+      if (!fresh.has(gi)) fresh.set(gi, { o:td.p, h:td.p, l:td.p, c:td.p, v:td.v, startTick:td.t });
+      const g = fresh.get(gi);
+      g.h = Math.max(g.h, td.p); g.l = Math.min(g.l, td.p); g.c = td.p; g.v += td.v;
+    }
+    for (const gi of [...fresh.keys()].sort((a,b)=>a-b)) {
+      const g = fresh.get(gi);
+      closed.push({ ...g, startPulse: Math.floor(g.startTick * PULSE_PER_TICK) });
+    }
+    if (closed.length > 600) closed.splice(0, closed.length - 600);
+    _closedUpToGi[period] = currentGi - 1;
+  }
+
+  // Build the live (current) candle fresh — only this one is allowed to update
+  const liveMap = new Map();
   for (const td of state.prices) {
     const gi = Math.floor(td.t / tpc);
-    if (!map.has(gi)) map.set(gi, { o:td.p, h:td.p, l:td.p, c:td.p, v:td.v, startTick:td.t });
-    const g = map.get(gi);
+    if (gi !== currentGi) continue;
+    if (!liveMap.has(gi)) liveMap.set(gi, { o:td.p, h:td.p, l:td.p, c:td.p, v:td.v, startTick:td.t });
+    const g = liveMap.get(gi);
     g.h = Math.max(g.h, td.p); g.l = Math.min(g.l, td.p); g.c = td.p; g.v += td.v;
   }
-  return [...map.values()].map(g => ({
-    ...g, startPulse: Math.floor(g.startTick * PULSE_PER_TICK)
-  }));
+  const liveArr = [...liveMap.values()].map(g => ({ ...g, startPulse: Math.floor(g.startTick * PULSE_PER_TICK) }));
+
+  return [...closed, ...liveArr];
 }
 
 function maOnCandles(candles, period) {
@@ -516,9 +546,7 @@ function maybeUpdatePanel(force) {
     if (pctEl) { pctEl.textContent = ''; pctEl.className = 'posTick'; }
   }
 
-  const goalPct = Math.min(100, equity / WIN_TARGET * 100);
-  const gp = $('goalProgress'); if (gp) gp.style.width = goalPct + '%';
-  const gl = $('goalPctLabel'); if (gl) gl.textContent = goalPct.toFixed(2) + '%';
+  // Goal bar removed (v0.9)
   if (state.showVol && state.prices.length)
     { const vl=$('volNowLabel'); if(vl) vl.textContent=state.prices[state.prices.length-1].v.toLocaleString(); }
   if (equity >= WIN_TARGET) showWin();
@@ -566,6 +594,9 @@ function drawCandleChart() {
   const vals = candles.flatMap(k=>[k.h,k.l]);
   let lo=Math.min(...vals), hi=Math.max(...vals);
   const pad = (hi-lo)*0.1 || 1; lo-=pad; hi+=pad;
+  // Y-zoom: pinch around center
+  { const center=(lo+hi)/2, half=(hi-lo)/2/(state.yZoom||1);
+    lo=center-half; hi=center+half; }
   const yScale = v => H - ((v-lo)/(hi-lo))*H;
 
   // grid
@@ -750,6 +781,27 @@ function addLog(text, type) {
   if (LOG_NEWS.length>100)  LOG_NEWS.pop();
 }
 function renderLog() {
+  // Pending orders bar (always rendered regardless of tab)
+  const pd = $('logPending');
+  if (pd) {
+    pd.innerHTML = state.pendingOrders.length
+      ? state.pendingOrders.map(o =>
+          `<div class="logPendingRow"><span class="lpSide ${o.side}">${o.side==='buy'?'限買':'限賣'}</span>`+
+          `<span class="lpQty">${o.qty}</span><span class="lpAt">@${o.limitPrice}</span>`+
+          `<button class="lpCancel" data-idx="${state.pendingOrders.indexOf(o)}">✕</button></div>`
+        ).join('')
+      : '';
+    // Wire cancel buttons (re-attach each render)
+    pd.querySelectorAll('.lpCancel').forEach(btn => {
+      btn.addEventListener('click', e => {
+        const idx = parseInt(e.currentTarget.dataset.idx);
+        if (!isNaN(idx) && idx >= 0 && idx < state.pendingOrders.length) {
+          state.pendingOrders.splice(idx, 1);
+          renderLog(); drawCandleChart();
+        }
+      });
+    });
+  }
   const tab = state.logTab;
   const list = tab==='trade' ? LOG_TRADE : tab==='news' ? LOG_NEWS : LOG_ALL;
   const el = $('log'+tab.charAt(0).toUpperCase()+tab.slice(1)) || $('logAll');
@@ -777,19 +829,7 @@ function updateOrdersUI() {
       ).join('') : '<div class="orderEmpty">尚無歷史</div>';
 }
 
-/* ============================================================
-   CALENDAR UI
-   ============================================================ */
-function updateCalendarUI() {
-  const cp = currentPulse();
-  const cl = $('calCurrentPulse'); if(cl) cl.textContent = pulseStr(cp);
-  const ul = $('upcomingList');
-  if (ul) ul.innerHTML = state.forecastEvents.length
-    ? state.forecastEvents.sort((a,b)=>a.executePulse-b.executePulse).map(ev =>
-        `<div class="calRow ${ev.dir}"><span class="calCountdown">${ev.executePulse-cp} 天後</span>
-         <span class="calMsg">${ev.msg.replace(/\{N\}/g,ev.executePulse-cp)}</span></div>`
-      ).join('') : '<div class="orderEmpty">尚無預告</div>';
-}
+/* Calendar removed (v0.9 cleanup) */
 
 /* ============================================================
    AUDIO
@@ -948,31 +988,49 @@ function showBroadcast(msg) {
    ============================================================ */
 function setupChartGesture() {
   const c = $('priceChart'); if (!c) return;
-  let startX=0, startOff=0, startDist=0, dragging=false;
+  let startX=0, startY=0, startOff=0, startYZoom=1, dragging=false, axis=null;
   const LOCK=10;
 
-  function onStart(x) { startX=x; startOff=state.viewOffset; dragging=true; }
-  function onMove(x) {
+  function onStart(x, y) {
+    startX=x; startY=y; startOff=state.viewOffset;
+    startYZoom=state.yZoom||1; dragging=true; axis=null;
+  }
+  function onMove(x, y) {
     if (!dragging) return;
-    const dx = x - startX;
-    if (Math.abs(dx) < LOCK && !dragging) return;
-    const all = buildCandles(state.candlePeriod);
-    const candleW = c.getBoundingClientRect().width / VISIBLE_CANDLES_BASE;
-    state.viewOffset = Math.max(0, Math.min(all.length - VISIBLE_CANDLES_BASE, startOff + dx/candleW));
-    state.pinned = (state.viewOffset <= 0);
+    const dx=x-startX, dy=y-startY;
+    if (!axis) {
+      if (Math.abs(dx)>LOCK||Math.abs(dy)>LOCK)
+        axis = Math.abs(dx)>Math.abs(dy) ? 'x' : 'y';
+      else return;
+    }
+    if (axis==='x') {
+      const all=buildCandles(state.candlePeriod);
+      const cw=c.getBoundingClientRect().width/VISIBLE_CANDLES_BASE;
+      // swipe left (dx<0)=scroll toward history, swipe right=back to live
+      state.viewOffset=Math.max(0,Math.min(all.length-VISIBLE_CANDLES_BASE, startOff-dx/cw));
+      state.pinned=(state.viewOffset<=0);
+      const rb=$('resetViewBtn');
+      if (rb) rb.classList.toggle('hidden', state.pinned);
+    } else {
+      // swipe up (dy<0)=zoom in, swipe down=zoom out
+      state.yZoom=Math.max(0.2,Math.min(8, startYZoom*Math.pow(1.012,-dy)));
+    }
     drawCandleChart();
   }
-  function onEnd() { dragging=false; }
+  function onEnd() { dragging=false; axis=null; }
 
-  c.addEventListener('mousedown', e=>{onStart(e.clientX);});
-  window.addEventListener('mousemove',e=>{onMove(e.clientX);});
+  c.addEventListener('mousedown', e=>{onStart(e.clientX,e.clientY);});
+  window.addEventListener('mousemove',e=>{if(dragging)onMove(e.clientX,e.clientY);});
   window.addEventListener('mouseup', onEnd);
-  c.addEventListener('touchstart',e=>{e.preventDefault();onStart(e.touches[0].clientX);},{passive:false});
-  c.addEventListener('touchmove', e=>{e.preventDefault();onMove(e.touches[0].clientX);},{passive:false});
-  c.addEventListener('touchend',  onEnd);
+  c.addEventListener('touchstart',e=>{e.preventDefault();onStart(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
+  c.addEventListener('touchmove', e=>{e.preventDefault();onMove(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
+  c.addEventListener('touchend', onEnd);
 
   const rb=$('resetViewBtn');
-  if (rb) rb.addEventListener('click',()=>{ state.viewOffset=0; state.pinned=true; rb.classList.add('hidden'); drawCandleChart(); });
+  if (rb) rb.addEventListener('click',()=>{
+    state.viewOffset=0; state.pinned=true; state.yZoom=1;
+    rb.classList.add('hidden'); drawCandleChart();
+  });
 }
 
 /* ============================================================
@@ -1338,6 +1396,7 @@ function returnToGlobe() {
    ============================================================ */
 function updatePortfolioUI() {
   const list = $('portfolioList'); if(!list) return;
+  const nickEl = $('portfolioNick'); if(nickEl) nickEl.textContent = nickname || '匿名';
   const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
   // merge live state for current market
   const cur = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
@@ -1439,8 +1498,8 @@ function init() {
   // Nickname screen
   const nickInput  = $('nickInput');
   const startBtn   = $('nickStartBtn');
-  const codeInput  = $('codeInput');
-  const loadBtn    = $('nickLoadBtn');
+  const codeInput  = null; // moved to globe screen
+  const loadBtn    = null;
 
   if (startBtn) startBtn.addEventListener('click', () => {
     const val = (nickInput?.value||'').trim();
@@ -1450,9 +1509,11 @@ function init() {
     startGame(null);
   });
 
-  if (loadBtn) loadBtn.addEventListener('click', () => {
-    const code = (codeInput?.value||'').trim();
-    const loaded = decodeGameState(code);
+  // Globe code load button
+  const globeCodeLoadBtn = $('globeCodeLoadBtn');
+  if (globeCodeLoadBtn) globeCodeLoadBtn.addEventListener('click', () => {
+    const raw = ($('globeCodeInput')?.value||'').trim();
+    const loaded = decodeGameState(raw);
     if (!loaded) { toast('數據碼無效'); return; }
     nickname = loaded.n || '玩家';
     localStorage.setItem('empire_nick', nickname);
@@ -1460,17 +1521,28 @@ function init() {
     startGame(loaded);
   });
 
+  // Nickname back button
+  const nickBackBtn = $('nickBackBtn');
+  if (nickBackBtn) nickBackBtn.addEventListener('click', () => {
+    $('nicknameScreen').classList.add('hidden');
+    $('globeScreen').classList.remove('hidden');
+    animateGlobe();
+  });
+
   // Top bar actions
-  const calBtn = $('calendarBtn');
-  if (calBtn) calBtn.addEventListener('click',()=>{ openOverlay('calendarOverlay'); updateCalendarUI(); playSfx('click'); });
-  const ordBtn = $('ordersBtn');
-  if (ordBtn) ordBtn.addEventListener('click',()=>{ openOverlay('ordersOverlay'); updateOrdersUI(); playSfx('click'); });
-  const indBtn = $('indicatorBtn');
-  if (indBtn) indBtn.addEventListener('click',()=>{ openOverlay('indicatorOverlay'); playSfx('click'); });
+  // Calendar removed
+  // Orders overlay removed — orders shown in log
+  // indicatorBtn removed from topbar — now in chart
+  const chartIndBtn = $('chartIndBtn');
+  if (chartIndBtn) chartIndBtn.addEventListener('click',()=>{ openOverlay('indicatorOverlay'); playSfx('click'); });
+
   const muteBtn = $('muteBtn');
   if (muteBtn) muteBtn.addEventListener('click', toggleMute);
   const lbBtn = $('leaderboardBtn');
   if (lbBtn) lbBtn.addEventListener('click',()=>{ openOverlay('leaderboardOverlay'); playSfx('click'); });
+
+  const codeBtn = $('codeBtn');
+  if (codeBtn) codeBtn.addEventListener('click',()=>{ openOverlay('codeOverlay'); showDataCode(); playSfx('click'); });
   const backBtn = $('backGlobeBtn');
   if (backBtn) backBtn.addEventListener('click',()=>{ returnToGlobe(); playSfx('click'); });
   const pfBtn = $('portfolioBtn');
