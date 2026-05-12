@@ -29,7 +29,7 @@ const NEWS_GOOD = [
   '監管機構正式核准 EPC 現貨 ETF 上市',
   'Sora 鏈日活突破歷史新高，創 240 萬地址',
   'Phantom Capital 公開五億美元做多倉位',
-  '跨鏈橋資金流入連續 7 Pulse 創新高',
+  '跨鏈橋資金流入連續 7 天創新高',
   '機構支付方案上線，EPC 接入百萬商戶',
 ];
 const NEWS_BAD = [
@@ -40,9 +40,9 @@ const NEWS_BAD = [
   'Sora 鏈遭遇駭客攻擊，損失估計 8000 萬',
   '監管草案禁止零售投資人持有 EPC',
   'Phantom Capital 拋售 70% 持倉，引發踩踏',
-  '法人連續 5 Pulse 減倉，做空訂單激增 200%',
+  '法人連續 5 天減倉，做空訂單激增 200%',
   '穩定幣脫鉤事件波及，市場連鎖賣壓',
-  '日活地址跌至 60 Pulse 新低，鏈上活躍度疲弱',
+  '日活地址跌至 60 天新低，鏈上活躍度疲弱',
 ];
 
 /* ============== 預告事件庫 ============== */
@@ -111,7 +111,7 @@ const state = {
 
 /* ============== Pulse 換算 ============== */
 function currentPulse() { return Math.floor(state.tick * PULSE_PER_TICK); }
-function pulseStr(p) { return 'PULSE ' + String(p).padStart(4, '0'); }
+function pulseStr(p) { return 'DAY ' + String(p).padStart(4, '0'); }
 
 let bgm = null;
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -189,8 +189,8 @@ function maybeAnnounceForecast() {
     executed: false,
   };
   state.upcomingEvents.push(ev);
-  log(`【預告】${lead} Pulse 後：${ev.text}`, 'event', 'news');
-  toast(`預告：${lead} Pulse 後 — ${ev.text}`, 'upcoming', 3200);
+  log(`【預告】${lead} 天後：${ev.text}`, 'event', 'news');
+  toast(`預告：${lead} 天後 — ${ev.text}`, 'upcoming', 3200);
   playSfx('news');
 }
 
@@ -269,6 +269,13 @@ function fmt(n) {
   return Math.round(n).toLocaleString();
 }
 
+function flashEl(id) {
+  const el = $(id); if (!el) return;
+  el.classList.remove('val-updated');
+  void el.offsetWidth;
+  el.classList.add('val-updated');
+}
+
 function maybeUpdatePanel(force = false) {
   if (!state.prices.length) return;
   const now = performance.now();
@@ -303,6 +310,10 @@ function maybeUpdatePanel(force = false) {
 
   const equity = state.cash + state.shares * cur;
   $('equityLabel').textContent = fmt(equity);
+
+  // 數值更新動畫 + 音效
+  ['cashLabel','sharesLabel','avgCostLabel','equityLabel','realPnlLabel'].forEach(flashEl);
+  if (!force) playSfx('panelTick');
 
   const unrealLabelEl = $('unrealPnlLabel');
   const unrealPctEl = $('unrealPnlPct');
@@ -427,7 +438,7 @@ function drawCandleChart() {
   ctx.strokeRect(0.5, 0.5, chartW - 1, H - 1);
 
   // 價格刻度
-  ctx.fillStyle = '#6c7686';
+  ctx.fillStyle = '#9faab8';
   ctx.font = '10px JetBrains Mono';
   ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   for (let g = 0; g <= 4; g++) {
@@ -541,7 +552,7 @@ function renderTimeAxis(candles) {
     const idx = Math.min(candles.length - 1, Math.round(p * (candles.length - 1)));
     const pulse = candles[idx].startPulse;
     const px = p * chartW;
-    return `<span style="left:${px}px">P${String(pulse).padStart(4,'0')}</span>`;
+    return `<span style="left:${px}px">D${String(pulse).padStart(4,'0')}</span>`;
   }).join('');
   el.innerHTML = html;
 }
@@ -697,7 +708,7 @@ function updateOrdersUI() {
         <span class="orderSide ${o.side}">${o.side === 'buy' ? '買' : '賣'}</span>
         <div>
           <div class="orderInfo">${o.qty} 股 @ ${o.price.toFixed(2)}</div>
-          <div class="orderSub">掛單於 P${String(placedPulse).padStart(4,'0')}</div>
+          <div class="orderSub">掛單於 D${String(placedPulse).padStart(4,'0')}</div>
         </div>
         <button class="orderAct" data-cancel="${o.id}">取消</button>
       </div>`;
@@ -720,7 +731,7 @@ function updateOrdersUI() {
         <span class="orderSide ${o.side}">${o.side === 'buy' ? '買' : '賣'}</span>
         <div>
           <div class="orderInfo">${o.qty} 股 @ ${o.price.toFixed(2)} <span class="orderSub">${o.kind === 'limit' ? '限價' : '市價'}</span></div>
-          <div class="orderSub">P${String(pulse).padStart(4,'0')}</div>
+          <div class="orderSub">D${String(pulse).padStart(4,'0')}</div>
         </div>
         ${resultHtml}
       </div>`;
@@ -742,8 +753,8 @@ function updateCalendarUI() {
         const remain = ev.executePulse - now;
         return `<div class="calItem ${ev.type}">
           <div>
-            <div class="calPulse ${ev.type}">P${String(ev.executePulse).padStart(4,'0')}</div>
-            <div class="calCountdown">${remain > 0 ? remain + ' Pulse 後' : '即將觸發'}</div>
+            <div class="calPulse ${ev.type}">D${String(ev.executePulse).padStart(4,'0')}</div>
+            <div class="calCountdown">${remain > 0 ? remain + ' 天後' : '即將觸發'}</div>
           </div>
           <div>
             <div class="calText">${ev.type === 'good' ? '◆ 利多' : '◆ 利空'} — ${ev.text}</div>
@@ -759,7 +770,7 @@ function updateCalendarUI() {
     pList.innerHTML = state.pastEvents.slice(0, 30).map(ev => {
       return `<div class="calItem ${ev.type} past">
         <div>
-          <div class="calPulse ${ev.type}">P${String(ev.actualPulse || ev.executePulse).padStart(4,'0')}</div>
+          <div class="calPulse ${ev.type}">D${String(ev.actualPulse || ev.executePulse).padStart(4,'0')}</div>
           <div class="calCountdown">已觸發</div>
         </div>
         <div>
@@ -819,6 +830,8 @@ function playSfx(kind) {
     [700, 900, 1100, 1320].forEach((f, i) => beep(f, 0.06, now + i*0.05, 0.22));
   } else if (kind === 'news') {
     beep(330, 0.10, now, 0.18, 'triangle'); beep(440, 0.08, now + 0.08, 0.16, 'triangle');
+  } else if (kind === 'panelTick') {
+    beep(1600, 0.015, now, 0.006);
   } else if (kind === 'click') {
     beep(1200, 0.02, now, 0.12);
   } else if (kind === 'reject') {
@@ -863,7 +876,7 @@ function checkWin() {
     state.won = true;
     const elapsed = Math.round((Date.now() - state.startTime) / 1000);
     const mins = Math.floor(elapsed / 60), secs = elapsed % 60;
-    $('winTime').textContent = `${mins} 分 ${secs} 秒 (PULSE ${currentPulse()})`;
+    $('winTime').textContent = `${mins} 分 ${secs} 秒 (DAY ${currentPulse()})`;
     $('winTrades').textContent = state.trades;
     $('winScreen').classList.remove('hidden');
     playSfx('win');

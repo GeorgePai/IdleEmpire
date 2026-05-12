@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=7">
+<link rel="stylesheet" href="./style.css?v=8">
 </head>
 <body>
 
@@ -25,15 +25,10 @@
         <span class="splashGoalAmt">$10,000</span>
         <span class="splashArrow">→</span>
         <span class="splashGoalTarget">$50,000</span>
-        <div class="splashGoalText">從一萬美元起步，賺到五萬美元就贏了</div>
       </div>
-      <div class="splashRules">
-        <div class="splashRule"><span class="splashKey">時間</span><span class="splashVal">每 5 秒推進 1 PULSE（遊戲日）</span></div>
-        <div class="splashRule"><span class="splashKey">交易</span><span class="splashVal">市價 / 限價委託</span></div>
-        <div class="splashRule"><span class="splashKey">情報</span><span class="splashVal">日曆預告未來事件，提前佈局</span></div>
-      </div>
+      <div class="splashGoalText">每 5 秒推進 1 天 · 市價 / 限價委託 · 日曆預告事件</div>
       <button id="startBtn" class="splashStart">進&nbsp;&nbsp;場&nbsp;&nbsp;交&nbsp;&nbsp;易</button>
-      <div class="splashVer">v0.6 — PULSE BUILD</div>
+      <div class="splashVer">v0.6</div>
     </div>
   </div>
 
@@ -44,7 +39,7 @@
           <span class="brandSymbol">EPC</span>
           <span class="brandName">Empire 指數</span>
           <span class="dot live"></span>
-          <span class="brandPulse" id="pulseLabel">PULSE 0000</span>
+          <span class="brandPulse" id="pulseLabel">DAY 0000</span>
         </div>
         <div class="topActions">
           <button id="calendarBtn" title="日曆">日曆</button>
@@ -58,7 +53,8 @@
       <div id="positionPanel">
         <div class="posMain">
           <div class="posMainLeft">
-            <div class="posPriceRow">
+            <div class="posLiveLabel">即時價位</div>
+          <div class="posPriceRow">
               <span class="posValue" id="priceNow">100.00</span>
               <span class="posTick" id="priceChange">+0.00 (+0.00%)</span>
             </div>
@@ -70,15 +66,11 @@
           </div>
         </div>
         <div class="posSub">
-          <span class="posInline"><span class="posK">現金</span><span class="posV" id="cashLabel">10,000</span></span>
-          <span class="posSep">·</span>
-          <span class="posInline"><span class="posK">持倉</span><span class="posV" id="sharesLabel">0</span></span>
-          <span class="posSep">·</span>
-          <span class="posInline"><span class="posK">成本</span><span class="posV" id="avgCostLabel">--</span></span>
-          <span class="posSep">·</span>
-          <span class="posInline"><span class="posK">已實現</span><span class="posV" id="realPnlLabel">+0</span></span>
-          <span class="posSep">·</span>
-          <span class="posInline highlight"><span class="posK">總資產</span><span class="posV" id="equityLabel">10,000</span></span>
+          <div class="posCell"><span class="posK">現金</span><span class="posV" id="cashLabel">10,000</span></div>
+          <div class="posCell"><span class="posK">持倉</span><span class="posV" id="sharesLabel">0</span></div>
+          <div class="posCell"><span class="posK">成本</span><span class="posV" id="avgCostLabel">--</span></div>
+          <div class="posCell"><span class="posK">已實現</span><span class="posV" id="realPnlLabel">+0</span></div>
+          <div class="posCell highlight"><span class="posK">總資產</span><span class="posV" id="equityLabel">10,000</span></div>
         </div>
       </div>
 
@@ -102,10 +94,10 @@
         <div class="drawerRow">
           <div class="drawerLabel">K 線週期</div>
           <div class="drawerControls">
-            <button class="periodBtn active" data-period="5">5 秒</button>
-            <button class="periodBtn" data-period="15">15 秒</button>
-            <button class="periodBtn" data-period="30">30 秒</button>
-            <button class="periodBtn" data-period="60">60 秒</button>
+            <button class="periodBtn active" data-period="5">1 天</button>
+            <button class="periodBtn" data-period="15">3 天</button>
+            <button class="periodBtn" data-period="30">6 天</button>
+            <button class="periodBtn" data-period="60">12 天</button>
           </div>
         </div>
         <div class="drawerRow">
@@ -162,7 +154,7 @@
         </div>
         <div class="calNow">
           <span class="calNowLabel">現在</span>
-          <span class="calNowVal" id="calCurrentPulse">PULSE 0000</span>
+          <span class="calNowVal" id="calCurrentPulse">DAY 0000</span>
         </div>
         <div class="tabRow">
           <button class="tabBtn active" data-caltab="upcoming">未來預告</button>
@@ -213,8 +205,8 @@
         <button class="qtyBtn" data-qty="10">10</button>
         <button class="qtyBtn active" data-qty="100">100</button>
         <button class="qtyBtn" data-qty="1000">1K</button>
-        <button class="qtyBtn" data-qty="max">全</button>
-        <input id="qtyInput" type="number" min="1" inputmode="numeric">
+        <button class="qtyBtn" data-qty="max">全倉</button>
+        <input id="qtyInput" type="number" min="1" inputmode="numeric" placeholder="自訂">
       </div>
       <div class="limitPriceRow hidden" id="limitPriceRow">
         <span class="limitLabel">目標價</span>
@@ -254,6 +246,6 @@
 
     <div id="toast" class="hidden"></div>
   </div>
-  <script src="./game.js?v=7"></script>
+  <script src="./game.js?v=8"></script>
 </body>
 </html>
