@@ -180,7 +180,7 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 #muteBtn, #indicatorBtn, #ordersBtn, #calendarBtn {
   height: 28px; padding: 0 10px;
   display: inline-flex; align-items: center; justify-content: center;
-  overflow: hidden; line-height: 1;
+  overflow: hidden; line-height: 1; white-space: nowrap;
   color: var(--text-mid); font-size: 10px; font-family: 'Noto Sans TC', sans-serif;
   font-weight: 700; letter-spacing: 0;
   border-radius: 4px; cursor: pointer;
