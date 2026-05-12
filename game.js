@@ -909,7 +909,7 @@ function setupChartGesture() {
 /* ============================================================
    GLOBE (Canvas 2D orthographic projection)
    ============================================================ */
-let globeRotX = 0.2, globeRotY = 0;
+let globeRotX = 0.2, globeRotY = Math.PI / 2;
 let globeAnimId = null;
 let globeDrag  = false, globeLastX = 0, globeLastY = 0;
 let globeSpinX = 0, globeSpinY = 0.003;
@@ -1197,6 +1197,7 @@ function init() {
     $('nicknameScreen').classList.add('hidden');
     setupGlobeEvents();
     animateGlobe();
+    selectMarket('empire');
   }
 
   // Globe enter button
