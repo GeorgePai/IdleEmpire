@@ -323,7 +323,7 @@ function initSyncedPrices(mktId) {
   const gameDay      = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / PULSE_MS);
   const startDay     = Math.max(0, gameDay - HISTORY_DAYS);
   const histStartTick = startDay * TICKS_PER_DAY;
-  const relTick      = totalAbsTick - histStartTick; // ≤ 750 steps — never huge
+  const relTick      = totalAbsTick - histStartTick; // ≤ 775 steps (30 days + partial) — always fast
 
   const seed = getMarketDaySeed(mktId); // seeded from startDay
   const rng  = mulberry32(seed);
