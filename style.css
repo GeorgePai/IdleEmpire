@@ -43,6 +43,7 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   display: flex; flex-direction: column;
   gap: 6px;
   position: relative; overflow: hidden;
+  padding-bottom: 38px;
 }
 
 /* ============================================================
