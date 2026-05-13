@@ -965,10 +965,7 @@ function playSfx(kind) {
   } catch(e){}
 }
 
-const BGM_SRCS = {
-  empire: './assets/audio/music.mp3',
-  tokyo:  './assets/audio/music.mp3',
-};
+// BGM: globe=bgm.mp3 (mp3), markets=synth (Web Audio)
 let _bgmEl=null, _bgmScene=null, _bgmMuted=false, _bgmFiId=null;
 const BGM_VOL=0.22;
 
@@ -1037,16 +1034,15 @@ function stopGlobeSynth() {
 }
 
 function playBGM(scene) {
-  if (scene!=='globe') {
-    // Markets → stop synth, play mp3
+  if (scene==='globe') {
+    // Globe → stop synth, play bgm.mp3
     stopGlobeSynth();
-    const src=BGM_SRCS[scene]||BGM_SRCS.empire;
-    if(_bgmScene===scene&&_bgmEl&&!_bgmEl.paused)return;
-    _bgmScene=scene;
+    if(_bgmScene==='globe'&&_bgmEl&&!_bgmEl.paused)return;
+    _bgmScene='globe';
     const dying=_bgmEl;
     if(dying){dying.muted=true;setTimeout(()=>{dying.pause();dying.src='';},300);}
     if(_bgmFiId){clearInterval(_bgmFiId);_bgmFiId=null;}
-    const next=new Audio(src);
+    const next=new Audio('./assets/audio/bgm.mp3');
     next.loop=true; next.volume=0; next.muted=_bgmMuted;
     next.play().catch(()=>{});
     _bgmEl=next;
@@ -1057,10 +1053,10 @@ function playBGM(scene) {
     },40);
     return;
   }
-  // Globe → stop mp3, play synth
+  // Markets → stop mp3, play synth
   if(_bgmEl){_bgmEl.muted=true;setTimeout(()=>{_bgmEl.pause();_bgmEl.src='';},300);_bgmEl=null;}
   if(_bgmFiId){clearInterval(_bgmFiId);_bgmFiId=null;}
-  _bgmScene='globe';
+  _bgmScene=scene;
   startGlobeSynth();
 }
 function toggleMute() {
@@ -1747,8 +1743,8 @@ function showGlobeSummary(loaded) {
 
   el.innerHTML = `
     <div class="glbSumCard">
-      <div class="glbSumNick">${loaded.n||'玩家'}</div>
-      <div class="glbSumEq">${f(totalEq)}</div>
+      <div class="glbSumNick">歡迎回來 · <span class="glbSumNickHL">${loaded.n||'玩家'}</span></div>
+      <div class="glbSumEq"><span class="glbSumEqHL">${f(totalEq)}</span></div>
       <div class="glbSumDetail">
         <div class="glbSumMktRow"><span class="glbSumMktDot" style="background:var(--text-dim)"></span><span class="glbSumMktName">現金</span><span class="glbSumMktVal">${f(cash)}</span></div>
         ${mktRows}
@@ -1758,36 +1754,40 @@ function showGlobeSummary(loaded) {
   el.classList.remove('hidden');
   _globeSummaryLoaded = loaded;
 
-  // 3. Replace globeEnterBtn with loaded-state enter button
+  // Bind globeEnterBtn → load game
   const enterBtn = $('globeEnterBtn');
   if (enterBtn) {
     enterBtn.textContent = '載入遊戲';
+    enterBtn.style.borderColor = '#2962ff';
+    enterBtn.style.boxShadow = '0 0 20px rgba(41,98,255,0.5)';
     enterBtn.classList.remove('hidden');
-    const freshBtn = enterBtn.cloneNode(true);
-    enterBtn.parentNode.replaceChild(freshBtn, enterBtn);
-    freshBtn.addEventListener('click', () => {
+    // Clone to remove stale listeners
+    const freshEnter = enterBtn.cloneNode(true);
+    enterBtn.parentNode.replaceChild(freshEnter, enterBtn);
+    freshEnter.addEventListener('click', () => {
       el.classList.add('hidden');
+      $('glbCancelBtn').classList.add('hidden');
       startGame(_globeSummaryLoaded);
     });
   }
-
-  // 4. Add cancel button below enter button
-  let cancelBtn = $('glbSumCancel');
-  if (!cancelBtn) {
-    cancelBtn = document.createElement('button');
-    cancelBtn.id = 'glbSumCancel';
-    cancelBtn.className = 'glbSumCancelBtn';
-    cancelBtn.textContent = '以新身分開始';
-    const refBtn = $('globeEnterBtn');
-    if (refBtn && refBtn.parentNode) refBtn.parentNode.insertBefore(cancelBtn, refBtn.nextSibling);
+  // Show static cancel button (always in DOM)
+  const cancelBtn = $('glbCancelBtn');
+  if (cancelBtn) {
+    cancelBtn.classList.remove('hidden');
+    // Re-clone to clear old listeners
+    const freshCancel = cancelBtn.cloneNode(true);
+    cancelBtn.parentNode.replaceChild(freshCancel, cancelBtn);
+    freshCancel.addEventListener('click', () => {
+      // Clear saved state for fresh start
+      localStorage.removeItem('empire_mkt_states');
+      localStorage.removeItem('empire_global_cash');
+      el.classList.add('hidden');
+      freshCancel.classList.add('hidden');
+      const eb = $('globeEnterBtn');
+      if (eb) { eb.textContent='進入市場'; eb.classList.add('hidden'); }
+      showNicknameScreen();
+    });
   }
-  cancelBtn.onclick = () => {
-    el.classList.add('hidden');
-    const eb = $('globeEnterBtn');
-    if (eb) { eb.textContent='進入市場'; eb.classList.add('hidden'); }
-    const cb = $('glbSumCancel'); if(cb) cb.remove();
-    showNicknameScreen();
-  };
 }
 
 function returnToGlobe() {
@@ -1836,17 +1836,11 @@ function updatePortfolioUI() {
       <span class="pfTh pfThShares">股數</span>
       <span class="pfTh pfThCost">成本</span>
       <span class="pfTh pfThVal">市值</span>
+      <span class="pfTh pfThRet">報酬率</span>
       <span class="pfTh pfThAlloc">佔比</span>
     </div>`;
 
-  // Cash row
-  html += `<div class="pfTRow">
-    <span class="pfTd pfTdName"><span class="pfDot" style="background:var(--text-dim)"></span>現金</span>
-    <span class="pfTd pfTdShares pfDim">--</span>
-    <span class="pfTd pfTdCost pfDim">--</span>
-    <span class="pfTd pfTdVal">$${fmt(globalCash)}</span>
-    <span class="pfTd pfTdAlloc pfDim">${pct(globalCash)}</span>
-  </div>`;
+  // Cash row removed — shown in pfFooter below table
 
   rows.forEach(({m,shares,avgCost,price,posVal}) => {
     if (!shares) {
@@ -1855,14 +1849,20 @@ function updatePortfolioUI() {
         <span class="pfTd pfTdShares pfDim">--</span>
         <span class="pfTd pfTdCost pfDim">--</span>
         <span class="pfTd pfTdVal pfDim">--</span>
+        <span class="pfTd pfTdRet pfDim">--</span>
         <span class="pfTd pfTdAlloc pfDim">--</span>
       </div>`;
     } else {
+      const costBasis = avgCost * shares;
+      const retRate = costBasis > 0 ? ((posVal - costBasis) / costBasis * 100) : 0;
+      const retStr = (retRate >= 0 ? '+' : '') + retRate.toFixed(1) + '%';
+      const retCls = retRate >= 0 ? 'pfRetUp' : 'pfRetDn';
       html += `<div class="pfTRow">
         <span class="pfTd pfTdName"><span class="pfDot" style="background:${m.color}"></span>${m.name}</span>
         <span class="pfTd pfTdShares">${shares}</span>
         <span class="pfTd pfTdCost">${avgCost.toFixed(2)}</span>
         <span class="pfTd pfTdVal">$${fmt(posVal)}</span>
+        <span class="pfTd pfTdRet ${retCls}">${retStr}</span>
         <span class="pfTd pfTdAlloc">${pct(posVal)}</span>
       </div>`;
     }

@@ -1236,27 +1236,31 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   background: rgba(8,12,20,0.78);
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 8px;
-  padding: 10px 14px 12px;
+  padding: 14px 18px 14px;
   backdrop-filter: blur(10px);
   font-family: 'JetBrains Mono', monospace;
+  text-align: center;
 }
 .glbSumNick {
-  font-size: 9px; color: var(--text-dim);
-  letter-spacing: 2px; text-transform: uppercase;
-  margin-bottom: 4px; font-family: 'Noto Sans TC', sans-serif;
+  font-size: 11px; color: var(--text-dim);
+  letter-spacing: 1px; margin-bottom: 6px;
+  font-family: 'Noto Sans TC', sans-serif; text-align: center;
 }
+.glbSumNickHL { color: var(--gold); font-weight: 700; }
 .glbSumEq {
-  font-size: 18px; font-weight: 700; color: #fff;
-  letter-spacing: 1px; margin-bottom: 8px;
+  font-size: 22px; font-weight: 700; letter-spacing: 1px;
+  margin-bottom: 10px; text-align: center;
 }
+.glbSumEqHL { color: var(--gold); font-family: 'JetBrains Mono', monospace; }
 .glbSumDetail {
   border-top: 1px solid rgba(255,255,255,0.05);
-  padding-top: 7px; margin-bottom: 9px;
-  display: flex; flex-direction: column; gap: 4px;
+  padding-top: 8px; margin-bottom: 10px;
+  display: flex; flex-direction: column; gap: 5px;
+  text-align: left;
 }
 .glbSumMktRow {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 10px;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px;
 }
 .glbSumMktDot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 .glbSumMktName { flex: 1; color: var(--text-mid); }
@@ -1279,15 +1283,16 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .pfCashRow { display: flex; align-items: center; gap: 8px; }
 #portfolioCashAlloc { font-size: 10px; color: var(--text-dim); }
 
-.glbSumCancelBtn {
-  display: block; width: 100%; margin-top: 8px; padding: 8px 0;
-  background: transparent; border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 5px; color: var(--text-dim);
-  font-family: 'Noto Sans TC', sans-serif; font-size: 11px;
-  cursor: pointer; letter-spacing: 1px;
+.glbCancelBtn {
+  pointer-events: auto; display: block; margin-top: 8px;
+  padding: 9px 32px; border-radius: 6px;
+  background: transparent; border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text-dim); font-family: 'Noto Sans TC', sans-serif; font-size: 11px;
+  letter-spacing: 1px; cursor: pointer;
   transition: border-color .15s, color .15s;
 }
-.glbSumCancelBtn:hover { border-color: var(--down); color: var(--down); }
+.glbCancelBtn.hidden { display: none; }
+.glbCancelBtn:hover { border-color: var(--down); color: var(--down); }
 
 /* Portfolio table */
 .pfTable { width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
@@ -1298,10 +1303,13 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   border-bottom: 1px solid rgba(255,255,255,0.04); height: 40px; box-sizing: border-box; }
 .pfTRow.pfTRowEmpty { opacity: 0.45; }
 .pfTd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pfTh.pfThName, .pfTd.pfTdName  { flex: 2; display: flex; align-items: center; gap: 6px; color: var(--text); }
-.pfTh.pfThShares, .pfTd.pfTdShares { flex: 1; text-align: right; color: var(--text-mid); }
-.pfTh.pfThCost, .pfTd.pfTdCost   { flex: 1.2; text-align: right; color: var(--text-mid); }
-.pfTh.pfThVal, .pfTd.pfTdVal     { flex: 1.8; text-align: right; color: var(--text); }
-.pfTh.pfThAlloc, .pfTd.pfTdAlloc { flex: 1; text-align: right; color: var(--text-dim); }
+.pfTh.pfThName, .pfTd.pfTdName  { flex: 2; display: flex; align-items: center; gap: 6px; color: var(--text); padding-right: 4px; }
+.pfTh.pfThShares, .pfTd.pfTdShares { flex: 0.8; text-align: right; color: var(--text-mid); padding: 0 4px; }
+.pfTh.pfThCost, .pfTd.pfTdCost   { flex: 1.2; text-align: right; color: var(--text-mid); padding: 0 4px; }
+.pfTh.pfThVal, .pfTd.pfTdVal     { flex: 1.8; text-align: right; color: var(--text); padding: 0 4px; }
+.pfTh.pfThRet, .pfTd.pfTdRet     { flex: 1.2; text-align: right; padding: 0 4px; }
+.pfTh.pfThAlloc, .pfTd.pfTdAlloc { flex: 1; text-align: right; color: var(--text-dim); padding-left: 4px; }
+.pfRetUp { color: var(--up); }
+.pfRetDn { color: var(--down); }
 .pfDot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .pfDim { color: var(--text-dim) !important; }
