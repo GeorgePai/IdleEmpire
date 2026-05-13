@@ -970,27 +970,31 @@ const BGM_SRCS = {
   empire: './assets/audio/bgm.mp3',
   tokyo:  './assets/audio/bgm.mp3',
 };
-let _bgmEl=null, _bgmScene=null, _bgmMuted=false;
+let _bgmEl=null, _bgmScene=null, _bgmMuted=false, _bgmFiId=null;
 const BGM_VOL=0.22;
 function playBGM(scene) {
   const src = BGM_SRCS[scene] || BGM_SRCS.globe;
   if (_bgmScene===scene && _bgmEl && !_bgmEl.paused) return;
   _bgmScene = scene;
+
+  // Stop all currently playing audio immediately then fade out
+  const dying = _bgmEl;
+  if (dying) {
+    dying.muted = true;  // instant silence
+    setTimeout(()=>{ dying.pause(); dying.src=''; }, 300);
+  }
+  // Cancel any in-progress fade-in
+  if (_bgmFiId) { clearInterval(_bgmFiId); _bgmFiId=null; }
+
   const next = new Audio(src);
   next.loop=true; next.volume=0; next.muted=_bgmMuted;
   next.play().catch(()=>{});
-  if (_bgmEl) {
-    const dying=_bgmEl;
-    const fo=setInterval(()=>{
-      dying.volume=Math.max(0,dying.volume-0.022);
-      if(dying.volume<=0){clearInterval(fo);dying.pause();dying.src='';}
-    },40);
-  }
-  _bgmEl=next;
-  const fi=setInterval(()=>{
-    if(!_bgmEl||_bgmEl!==next){clearInterval(fi);return;}
-    next.volume=Math.min(BGM_VOL,next.volume+0.011);
-    if(next.volume>=BGM_VOL)clearInterval(fi);
+  _bgmEl = next;
+
+  _bgmFiId = setInterval(()=>{
+    if(!_bgmEl||_bgmEl!==next){clearInterval(_bgmFiId);_bgmFiId=null;return;}
+    next.volume=Math.min(BGM_VOL,next.volume+0.015);
+    if(next.volume>=BGM_VOL){clearInterval(_bgmFiId);_bgmFiId=null;}
   },40);
 }
 function toggleMute() {
@@ -1658,9 +1662,11 @@ function showGlobeSummary(loaded) {
   const el   = $('globeLoadedSummary'); if(!el){ startGame(loaded); return; }
 
   const ms  = loaded.ms || {};
-  const cash = loaded.ca || 10000;
+  // cash lives in the active-market slot of ms (v3 format)
+  const activeMktMs = ms[loaded.m||'empire'] || ms[MARKET_LIST[0]] || {};
+  const cash = activeMktMs.cash ?? 10000;
   const totalPos = MARKET_LIST.reduce((t,id)=>{
-    const s=ms[id]; return t+(s&&s.sh>0?s.sh*(s.lp||MARKETS[id].base):0);
+    const s=ms[id]; return t+(s&&s.shares>0?s.shares*(s.lastPrice||MARKETS[id].base):0);
   },0);
   const totalEq = cash + totalPos;
   const f = n => '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1669,7 +1675,7 @@ function showGlobeSummary(loaded) {
   let mktRows = '';
   MARKET_LIST.forEach(id => {
     const m=MARKETS[id]; if(!m) return;
-    const s=ms[id]; const pv=s&&s.sh>0?s.sh*(s.lp||m.base):0;
+    const s=ms[id]; const pv=s&&s.shares>0?s.shares*(s.lastPrice||m.base):0;
     if(pv>0) mktRows += `<div class="glbSumMktRow"><span class="glbSumMktDot" style="background:${m.color}"></span><span class="glbSumMktName">${m.name}</span><span class="glbSumMktVal">${f(pv)}</span></div>`;
   });
 
