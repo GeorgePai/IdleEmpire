@@ -773,8 +773,8 @@ function placeLimitOrder(side) {
   const lp   = +raw.toFixed(2);
   const cp   = currentPrice();
   if (side==='buy'  && lp >= cp){toast('委買價需低於即時價 '+cp.toFixed(2));playSfx('reject');return;}
-  if (side==='sell' && lp <= cp){toast('委賣價需高於即時價 '+cp.toFixed(2));playSfx('reject');return;}
   if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
+  if (side==='sell'&&state.shares<=0){toast('沒有持倉');playSfx('reject');return;}
   state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
   addLog(`${pulseStr(currentPulse())} 委託${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
   toast(`委託成功：${side==='buy'?'買':'賣'} ${qty} 股 @ ${lp}`);
@@ -966,8 +966,8 @@ function playSfx(kind) {
 }
 
 const BGM_SRCS = {
-  empire: './assets/audio/bgm.mp3',
-  tokyo:  './assets/audio/bgm.mp3',
+  empire: './assets/audio/music.mp3',
+  tokyo:  './assets/audio/music.mp3',
 };
 let _bgmEl=null, _bgmScene=null, _bgmMuted=false, _bgmFiId=null;
 const BGM_VOL=0.22;
@@ -1037,31 +1037,31 @@ function stopGlobeSynth() {
 }
 
 function playBGM(scene) {
-  if (scene==='globe') {
-    // Stop mp3
-    if(_bgmEl){_bgmEl.muted=true;setTimeout(()=>{_bgmEl.pause();_bgmEl.src='';},300);_bgmEl=null;}
+  if (scene!=='globe') {
+    // Markets → stop synth, play mp3
+    stopGlobeSynth();
+    const src=BGM_SRCS[scene]||BGM_SRCS.empire;
+    if(_bgmScene===scene&&_bgmEl&&!_bgmEl.paused)return;
+    _bgmScene=scene;
+    const dying=_bgmEl;
+    if(dying){dying.muted=true;setTimeout(()=>{dying.pause();dying.src='';},300);}
     if(_bgmFiId){clearInterval(_bgmFiId);_bgmFiId=null;}
-    _bgmScene='globe';
-    startGlobeSynth();
+    const next=new Audio(src);
+    next.loop=true; next.volume=0; next.muted=_bgmMuted;
+    next.play().catch(()=>{});
+    _bgmEl=next;
+    _bgmFiId=setInterval(()=>{
+      if(!_bgmEl||_bgmEl!==next){clearInterval(_bgmFiId);_bgmFiId=null;return;}
+      next.volume=Math.min(BGM_VOL,next.volume+0.015);
+      if(next.volume>=BGM_VOL){clearInterval(_bgmFiId);_bgmFiId=null;}
+    },40);
     return;
   }
-  // Not globe — stop synth
-  stopGlobeSynth();
-  const src=BGM_SRCS[scene]||BGM_SRCS.empire;
-  if(_bgmScene===scene&&_bgmEl&&!_bgmEl.paused)return;
-  _bgmScene=scene;
-  const dying=_bgmEl;
-  if(dying){dying.muted=true;setTimeout(()=>{dying.pause();dying.src='';},300);}
+  // Globe → stop mp3, play synth
+  if(_bgmEl){_bgmEl.muted=true;setTimeout(()=>{_bgmEl.pause();_bgmEl.src='';},300);_bgmEl=null;}
   if(_bgmFiId){clearInterval(_bgmFiId);_bgmFiId=null;}
-  const next=new Audio(src);
-  next.loop=true; next.volume=0; next.muted=_bgmMuted;
-  next.play().catch(()=>{});
-  _bgmEl=next;
-  _bgmFiId=setInterval(()=>{
-    if(!_bgmEl||_bgmEl!==next){clearInterval(_bgmFiId);_bgmFiId=null;return;}
-    next.volume=Math.min(BGM_VOL,next.volume+0.015);
-    if(next.volume>=BGM_VOL){clearInterval(_bgmFiId);_bgmFiId=null;}
-  },40);
+  _bgmScene='globe';
+  startGlobeSynth();
 }
 function toggleMute() {
   _bgmMuted=!_bgmMuted;
@@ -1164,22 +1164,20 @@ function setupLeaderboard() {
   });
 }
 
+const _lbExpanded = new Set(); // persist expanded IDs across re-renders
 function renderLeaderboard(players) {
   const el = $('leaderboardList'); if (!el) return;
   if (!players.length) { el.innerHTML='<div class="lbEmpty">尚無在線玩家</div>'; return; }
   el.innerHTML = players.map((p,i) => {
     const isSelf = p.id === playerId;
-    const mkt = MARKETS[p.market];
-    const mktColor = mkt ? mkt.color : '#fff';
     const hasDetail = p.markets != null;
+    const isOpen = _lbExpanded.has(p.id);
     let mktRows = '';
     if (hasDetail) {
-      // Cash row first
       if (p.cash != null) {
         mktRows += `<div class="lbMktRow"><span class="lbMktDot" style="background:var(--text-mute)"></span>`+
                    `<span class="lbMktName">現金</span><span class="lbMktEq">$${fmt(p.cash)}</span></div>`;
       }
-      // All markets
       MARKET_LIST.forEach(id => {
         const m = MARKETS[id]; if(!m) return;
         const posVal = p.markets[id] || 0;
@@ -1192,8 +1190,8 @@ function renderLeaderboard(players) {
       <span class="lbRank">${i+1}</span>
       <span class="lbName">${p.nickname||'匿名'}</span>
       <span class="lbEq">$${fmt(p.equity)}</span>
-      ${hasDetail?'<span class="lbExpand">▸</span>':''}
-    </div>${mktRows?`<div class="lbDetail hidden" data-lb-detail="${p.id}">${mktRows}</div>`:''}`;
+      ${hasDetail?`<span class="lbExpand">${isOpen?'▾':'▸'}</span>`:''}
+    </div>${mktRows?`<div class="lbDetail${isOpen?'':' hidden'}" data-lb-detail="${p.id}">${mktRows}</div>`:''}`;
   }).join('');
   el.querySelectorAll('.lbExpand').forEach(btn => {
     btn.addEventListener('click', e => {
@@ -1204,6 +1202,7 @@ function renderLeaderboard(players) {
       const open = !det.classList.contains('hidden');
       det.classList.toggle('hidden', open);
       btn.textContent = open ? '▸' : '▾';
+      if (open) _lbExpanded.delete(id); else _lbExpanded.add(id);
     });
   });
 }
@@ -1754,15 +1753,41 @@ function showGlobeSummary(loaded) {
         <div class="glbSumMktRow"><span class="glbSumMktDot" style="background:var(--text-dim)"></span><span class="glbSumMktName">現金</span><span class="glbSumMktVal">${f(cash)}</span></div>
         ${mktRows}
       </div>
-      <button id="glbSumEnter" class="glbSumBtn">進入市場</button>
     </div>
   `;
   el.classList.remove('hidden');
   _globeSummaryLoaded = loaded;
-  el.querySelector('#glbSumEnter').addEventListener('click', () => {
+
+  // 3. Replace globeEnterBtn with loaded-state enter button
+  const enterBtn = $('globeEnterBtn');
+  if (enterBtn) {
+    enterBtn.textContent = '載入遊戲';
+    enterBtn.classList.remove('hidden');
+    const freshBtn = enterBtn.cloneNode(true);
+    enterBtn.parentNode.replaceChild(freshBtn, enterBtn);
+    freshBtn.addEventListener('click', () => {
+      el.classList.add('hidden');
+      startGame(_globeSummaryLoaded);
+    });
+  }
+
+  // 4. Add cancel button below enter button
+  let cancelBtn = $('glbSumCancel');
+  if (!cancelBtn) {
+    cancelBtn = document.createElement('button');
+    cancelBtn.id = 'glbSumCancel';
+    cancelBtn.className = 'glbSumCancelBtn';
+    cancelBtn.textContent = '以新身分開始';
+    const refBtn = $('globeEnterBtn');
+    if (refBtn && refBtn.parentNode) refBtn.parentNode.insertBefore(cancelBtn, refBtn.nextSibling);
+  }
+  cancelBtn.onclick = () => {
     el.classList.add('hidden');
-    startGame(_globeSummaryLoaded);
-  });
+    const eb = $('globeEnterBtn');
+    if (eb) { eb.textContent='進入市場'; eb.classList.add('hidden'); }
+    const cb = $('glbSumCancel'); if(cb) cb.remove();
+    showNicknameScreen();
+  };
 }
 
 function returnToGlobe() {
@@ -1783,65 +1808,71 @@ function returnToGlobe() {
 function updatePortfolioUI() {
   const list = $('portfolioList'); if(!list) return;
   const nickEl = $('portfolioNick'); if(nickEl) nickEl.textContent = nickname || '匿名';
-  // Cash is global — always use live state.cash
   const globalCash = state.cash;
   const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
-  // Merge live current-market position (no cash — cash is global)
   const cur = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
   all[selectedMkt] = { shares:state.shares, avgCost:state.avgCost, realizedPnl:state.realizedPnl, lastPrice:cur };
 
-  let totalPosition = 0, html = '';
+  // Build rows data first so we know totalEq before rendering
+  const rows = [];
+  let totalPosition = 0;
   MARKET_LIST.forEach(id => {
     const m  = MARKETS[id];
     const ms = all[id];
-    const price = ms ? (ms.lastPrice || MARKETS[id].base) : MARKETS[id].base;
-    const shares = ms ? (ms.shares || 0) : 0;
+    const price   = ms ? (ms.lastPrice || m.base) : m.base;
+    const shares  = ms ? (ms.shares  || 0) : 0;
     const avgCost = ms ? (ms.avgCost || 0) : 0;
     const posVal  = shares * price;
     totalPosition += posVal;
-    if (!shares) {
-      html += `<div class="pfRow">
-        <div class="pfLeft"><span class="pfMkt" style="color:${m.color}">${m.name}</span><span class="pfSub">空倉</span></div>
-        <div class="pfRight"><span class="pfVal pfDim">--</span><span class="pfAlloc pfDim">--</span></div>
-      </div>`;
-      return;
-    }
-    const unrealized = (price - avgCost) * shares;
-    const uCls = unrealized >= 0 ? 'up' : 'down';
-    // placeholder — alloc % added after totalEq is known
-    html += `<div class="pfRow" data-posval="${posVal}">
-      <div class="pfLeft">
-        <span class="pfMkt" style="color:${m.color}">${m.name}</span>
-        <span class="pfSub">${shares}股 @ ${avgCost.toFixed(2)}</span>
-      </div>
-      <div class="pfRight">
-        <span class="pfVal">${fmt(posVal)}</span>
-        <span class="pfPct ${uCls}">${unrealized>=0?'+':''}${fmt(unrealized)}</span>
-      </div>
-    </div>`;
+    rows.push({ m, shares, avgCost, price, posVal });
   });
-  list.innerHTML = html;
   const totalEq = globalCash + totalPosition;
-  // Inject alloc % into each row
-  const pRows = list.querySelectorAll('.pfRow[data-posval]');
-  pRows.forEach(row => {
-    const pv = parseFloat(row.dataset.posval);
-    const alloc = totalEq > 0 ? (pv/totalEq*100).toFixed(1) : '0.0';
-    const right = row.querySelector('.pfRight');
-    if (right) {
-      const sp = document.createElement('span');
-      sp.className='pfAlloc'; sp.textContent=alloc+'%';
-      right.appendChild(sp);
+  const pct = v => totalEq > 0 ? (v/totalEq*100).toFixed(1)+'%' : '--';
+
+  // Table header
+  let html = `<div class="pfTable">
+    <div class="pfTHead">
+      <span class="pfTh pfThName">名稱</span>
+      <span class="pfTh pfThShares">股數</span>
+      <span class="pfTh pfThCost">成本</span>
+      <span class="pfTh pfThVal">市值</span>
+      <span class="pfTh pfThAlloc">佔比</span>
+    </div>`;
+
+  // Cash row
+  html += `<div class="pfTRow">
+    <span class="pfTd pfTdName"><span class="pfDot" style="background:var(--text-dim)"></span>現金</span>
+    <span class="pfTd pfTdShares pfDim">--</span>
+    <span class="pfTd pfTdCost pfDim">--</span>
+    <span class="pfTd pfTdVal">$${fmt(globalCash)}</span>
+    <span class="pfTd pfTdAlloc pfDim">${pct(globalCash)}</span>
+  </div>`;
+
+  rows.forEach(({m,shares,avgCost,price,posVal}) => {
+    if (!shares) {
+      html += `<div class="pfTRow pfTRowEmpty">
+        <span class="pfTd pfTdName"><span class="pfDot" style="background:${m.color}"></span>${m.name}</span>
+        <span class="pfTd pfTdShares pfDim">--</span>
+        <span class="pfTd pfTdCost pfDim">--</span>
+        <span class="pfTd pfTdVal pfDim">--</span>
+        <span class="pfTd pfTdAlloc pfDim">--</span>
+      </div>`;
+    } else {
+      html += `<div class="pfTRow">
+        <span class="pfTd pfTdName"><span class="pfDot" style="background:${m.color}"></span>${m.name}</span>
+        <span class="pfTd pfTdShares">${shares}</span>
+        <span class="pfTd pfTdCost">${avgCost.toFixed(2)}</span>
+        <span class="pfTd pfTdVal">$${fmt(posVal)}</span>
+        <span class="pfTd pfTdAlloc">${pct(posVal)}</span>
+      </div>`;
     }
   });
-  // Cash row alloc
-  if (totalEq > 0) {
-    const cashAlloc = (globalCash/totalEq*100).toFixed(1);
-    const cAllocEl = $('portfolioCashAlloc');
-    if (cAllocEl) cAllocEl.textContent = cashAlloc+'%';
-  }
+  html += '</div>';
+  list.innerHTML = html;
+
   const tEl = $('portfolioTotal'); if(tEl) tEl.textContent = '$'+fmt(totalEq);
   const cEl = $('portfolioCash'); if(cEl) cEl.textContent = '$'+fmt(globalCash);
+  const cAllocEl = $('portfolioCashAlloc'); if(cAllocEl) cAllocEl.textContent = pct(globalCash);
 }
 
 /* ============================================================
@@ -1946,6 +1977,7 @@ function init() {
     localStorage.setItem('empire_nick', nickname);
     selectedMkt = loaded.m || 'empire';
     const ci = $('globeCodeInput'); if(ci) ci.value = '';
+    toast(`歡迎 ${loaded.n||'玩家'} 回來！`);
     // Show summary on globe instead of going to game directly
     showGlobeSummary(loaded);
   });

@@ -1227,9 +1227,10 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   top: 70px; left: 50%; transform: translateX(-50%);
   width: 90%; max-width: 300px;
   pointer-events: auto;
-  animation: fadeSlideUp .2s ease;
+  animation: glbSumIn .22s ease both;
 }
 .globeLoadedSummary.hidden { display: none; }
+@keyframes glbSumIn { from { opacity:0; transform:translateX(-50%) scale(0.96); } to { opacity:1; transform:translateX(-50%) scale(1); } }
 
 .glbSumCard {
   background: rgba(8,12,20,0.78);
@@ -1277,3 +1278,30 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .pfRight { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .pfCashRow { display: flex; align-items: center; gap: 8px; }
 #portfolioCashAlloc { font-size: 10px; color: var(--text-dim); }
+
+.glbSumCancelBtn {
+  display: block; width: 100%; margin-top: 8px; padding: 8px 0;
+  background: transparent; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 5px; color: var(--text-dim);
+  font-family: 'Noto Sans TC', sans-serif; font-size: 11px;
+  cursor: pointer; letter-spacing: 1px;
+  transition: border-color .15s, color .15s;
+}
+.glbSumCancelBtn:hover { border-color: var(--down); color: var(--down); }
+
+/* Portfolio table */
+.pfTable { width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.pfTHead { display: flex; padding: 4px 8px 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.06); }
+.pfTh { color: var(--text-dim); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; }
+.pfTRow { display: flex; align-items: center; padding: 9px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.04); height: 40px; box-sizing: border-box; }
+.pfTRow.pfTRowEmpty { opacity: 0.45; }
+.pfTd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pfTh.pfThName, .pfTd.pfTdName  { flex: 2; display: flex; align-items: center; gap: 6px; color: var(--text); }
+.pfTh.pfThShares, .pfTd.pfTdShares { flex: 1; text-align: right; color: var(--text-mid); }
+.pfTh.pfThCost, .pfTd.pfTdCost   { flex: 1.2; text-align: right; color: var(--text-mid); }
+.pfTh.pfThVal, .pfTd.pfTdVal     { flex: 1.8; text-align: right; color: var(--text); }
+.pfTh.pfThAlloc, .pfTd.pfTdAlloc { flex: 1; text-align: right; color: var(--text-dim); }
+.pfDot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.pfDim { color: var(--text-dim) !important; }
