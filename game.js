@@ -955,15 +955,28 @@ function syncToFirebase() {
 
 function setupLeaderboard() {
   if (!db) return;
-  db.ref('empire/players').on('value', snap => {
-    const data = snap.val() || {};
-    const players = Object.entries(data)
+
+  // Auto-remove this player from Firebase when they disconnect
+  db.ref('empire/players/' + playerId).onDisconnect().remove();
+
+  let _lbSnap = {};
+  function applyFilter() {
+    const now = Date.now();
+    const players = Object.entries(_lbSnap)
       .map(([id,p])=>({id,...p}))
-      .filter(p => Date.now()-p.lastSeen < 3*60*1000) // active in last 3min
+      .filter(p => now - p.lastSeen < 90*1000) // active in last 90s
       .sort((a,b)=>b.equity-a.equity)
       .slice(0,10);
     renderLeaderboard(players);
+  }
+
+  db.ref('empire/players').on('value', snap => {
+    _lbSnap = snap.val() || {};
+    applyFilter();
   });
+
+  // Re-apply filter every 30s so stale players disappear even without Firebase change
+  setInterval(applyFilter, 30*1000);
 
   db.ref('empire/broadcasts').limitToLast(1).on('child_added', snap => {
     const d = snap.val();
@@ -1320,10 +1333,11 @@ function selectMarket(id) {
    NICKNAME SCREEN
    ============================================================ */
 function showNicknameScreen() {
-  if (nickname) { startGame(null); return; }  // returning player skips nickname
   const gs=$('globeScreen'); if(gs) gs.classList.add('hidden');
   const ns=$('nicknameScreen'); if(ns) ns.classList.remove('hidden');
   cancelAnimationFrame(globeAnimId);
+  // Pre-fill saved nickname so returning players don't retype, but always show screen
+  const ni=$('nickInput'); if(ni && nickname) { ni.value=nickname; ni.select(); }
 }
 
 /* ============================================================
