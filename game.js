@@ -767,14 +767,17 @@ function executeMarketSell(qty, p) {
 }
 
 function placeLimitOrder(side) {
-  const qty  = getQty(); if (qty<=0){toast('數量無效');playSfx('reject');return;}
+  // For sell: always use actual shares held (not cash/price), cap at holdings
+  let qty = side==='sell'
+    ? (state.qtyMode==='max' ? state.shares : Math.min(getQty(), state.shares))
+    : getQty();
+  if (qty<=0){toast(side==='sell'?'沒有持倉':'數量無效');playSfx('reject');return;}
   const raw  = parseFloat($('limitPriceInput')?.value);
   if (isNaN(raw)||raw<=0){toast('目標價無效');playSfx('reject');return;}
   const lp   = +raw.toFixed(2);
   const cp   = currentPrice();
   if (side==='buy'  && lp >= cp){toast('委買價需低於即時價 '+cp.toFixed(2));playSfx('reject');return;}
   if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
-  if (side==='sell'&&state.shares<=0){toast('沒有持倉');playSfx('reject');return;}
   state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
   addLog(`${pulseStr(currentPulse())} 委託${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
   toast(`委託成功：${side==='buy'?'買':'賣'} ${qty} 股 @ ${lp}`);
@@ -1778,13 +1781,17 @@ function showGlobeSummary(loaded) {
     const freshCancel = cancelBtn.cloneNode(true);
     cancelBtn.parentNode.replaceChild(freshCancel, cancelBtn);
     freshCancel.addEventListener('click', () => {
-      // Clear saved state for fresh start
-      localStorage.removeItem('empire_mkt_states');
-      localStorage.removeItem('empire_global_cash');
+      // Clear ALL saved state for a true fresh start
+      ['empire_mkt_states','empire_global_cash','empire_nick'].forEach(k=>localStorage.removeItem(k));
+      // Clear in-memory logs
+      LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0;
+      Object.keys(LOG_UNREAD).forEach(k=>LOG_UNREAD[k]=0);
+      state.pendingOrders=[]; state.orderHistory=[];
       el.classList.add('hidden');
       freshCancel.classList.add('hidden');
       const eb = $('globeEnterBtn');
       if (eb) { eb.textContent='進入市場'; eb.classList.add('hidden'); }
+      nickname='';
       showNicknameScreen();
     });
   }

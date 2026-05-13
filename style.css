@@ -1286,13 +1286,15 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .glbCancelBtn {
   pointer-events: auto; display: block; margin-top: 8px;
   padding: 9px 32px; border-radius: 6px;
-  background: transparent; border: 1px solid rgba(255,255,255,0.15);
-  color: var(--text-dim); font-family: 'Noto Sans TC', sans-serif; font-size: 11px;
-  letter-spacing: 1px; cursor: pointer;
-  transition: border-color .15s, color .15s;
+  background: #22c55e; border: none;
+  color: #fff; font-family: 'Noto Sans TC', sans-serif; font-size: 11px;
+  font-weight: 700; letter-spacing: 1px; cursor: pointer;
+  box-shadow: 0 0 14px rgba(34,197,94,0.3);
+  transition: opacity .15s;
 }
 .glbCancelBtn.hidden { display: none; }
-.glbCancelBtn:hover { border-color: var(--down); color: var(--down); }
+.glbCancelBtn:hover { opacity: 0.85; }
+.glbCancelBtn:active { transform: translateY(1px); }
 
 /* Portfolio table */
 .pfTable { width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
@@ -1313,3 +1315,12 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .pfRetDn { color: var(--down); }
 .pfDot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .pfDim { color: var(--text-dim) !important; }
+
+/* Code overlay hint */
+.codeHintBlock { text-align: center; padding: 8px 0; }
+.codeHintLine {
+  font-family: 'Noto Sans TC', sans-serif;
+  font-size: 13px; color: var(--text-mid);
+  line-height: 2; margin: 0;
+}
+.codeHL { color: var(--gold); font-weight: 700; }
