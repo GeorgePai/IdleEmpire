@@ -266,10 +266,13 @@ function toast(msg) {
 /* ============================================================
    SEED-BASED PRNG (synchronized price across all clients)
    ============================================================ */
-const GAME_EPOCH_MS  = 1748736000000; // 2025-06-01 00:00 UTC — fixed cross-device epoch
-const PULSE_MS       = 5000;           // 1 game day = 5 real seconds
-const TICKS_PER_DAY  = PULSE_MS / TICK_MS; // 25 ticks per game day
-const HISTORY_DAYS   = 30;             // show 30 game days of K-bar history
+const GAME_EPOCH_MS  = 1748736000000; // 2025-06-01 00:00 UTC — fixed cross-device reference
+const PULSE_MS       = 5000;           // 1 K-bar = 5 real seconds (25 ticks)
+const TICKS_PER_BAR  = PULSE_MS / TICK_MS; // 25 ticks per K-bar
+const HISTORY_BARS   = 30;             // show 30 K-bars of history = 750 ticks
+// Seed window: anyone opening within the same SEED_PERIOD_MS sees an identical chart.
+// 1 h window → reliable cross-device sync; max fast-forward ≈ 17 250 steps (< 10 ms).
+const SEED_PERIOD_MS = 3600 * 1000;
 
 function mulberry32(seed) {
   let s = seed >>> 0;
@@ -282,11 +285,10 @@ function mulberry32(seed) {
 }
 
 function getMarketDaySeed(mktId) {
-  // Seed from the start of the 30-day history window — two clients at same moment
-  // compute same gameDay → same startDay → same seed → identical price history.
-  const gameDay  = Math.floor(Math.max(0, Date.now() - GAME_EPOCH_MS) / PULSE_MS);
-  const startDay = Math.max(0, gameDay - HISTORY_DAYS);
-  let h = (startDay * 0x9e3779b9) >>> 0;
+  // Seed on 1-hour periods from epoch — anyone opening within the same hour
+  // gets an identical seed → identical price chart. Changes ≤ once per hour.
+  const period = Math.floor(Math.max(0, Date.now() - GAME_EPOCH_MS) / SEED_PERIOD_MS);
+  let h = (period * 0x9e3779b9) >>> 0;
   for (let i = 0; i < mktId.length; i++) {
     h = Math.imul(h ^ mktId.charCodeAt(i), 0x85ebca77);
     h = ((h << 13) | (h >>> 19)) >>> 0;
@@ -316,19 +318,25 @@ let _closedCandles = {}; // period → sorted array of frozen OHLC
 let _closedUpToGi  = {}; // period → last gi that has been frozen
 
 function initSyncedPrices(mktId) {
-  const m = MARKETS[mktId];
-  const now = Date.now();
-  // epoch-based ticks and game-day index
-  const totalAbsTick = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / TICK_MS);
-  const gameDay      = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / PULSE_MS);
-  const startDay     = Math.max(0, gameDay - HISTORY_DAYS);
-  const histStartTick = startDay * TICKS_PER_DAY;
-  const relTick      = totalAbsTick - histStartTick; // ≤ 775 steps (30 days + partial) — always fast
+  const m       = MARKETS[mktId];
+  const elapsed = Math.max(0, Date.now() - GAME_EPOCH_MS);
 
-  const seed = getMarketDaySeed(mktId); // seeded from startDay
+  // Position within the current 1-hour seed period (0 … 17 999 ticks)
+  const periodStartMs  = Math.floor(elapsed / SEED_PERIOD_MS) * SEED_PERIOD_MS;
+  const absTick        = Math.floor((elapsed - periodStartMs) / TICK_MS);
+
+  const histLen   = HISTORY_BARS * TICKS_PER_BAR; // 750 ticks
+  const histStart = Math.max(0, absTick - histLen); // fast-forward target
+  const relTick   = absTick - histStart;            // visible ticks (≤ 750)
+
+  const seed = getMarketDaySeed(mktId);
   const rng  = mulberry32(seed);
 
+  // Fast-forward to history window (≤ 17 250 steps, < 10 ms)
   let price = m.base;
+  for (let t = 0; t < histStart; t++) price = seededGBMStep(rng, price, m);
+
+  // Build visible history
   state.prices = [];
   for (let t = 0; t <= relTick; t++) {
     price = seededGBMStep(rng, price, m);
@@ -337,23 +345,21 @@ function initSyncedPrices(mktId) {
     state.prices.push({ t, p: +price.toFixed(4),
                         v: Math.round(800 + chg*80000 + Math.random()*500) });
   }
-  state.tick = relTick;
-  priceRng = rng;
+  state.tick   = relTick;
+  priceRng     = rng;
   _closedCandles = {};
   _closedUpToGi  = {};
 }
 
 function getSeedCurrentPrice(mktId) {
-  const m = MARKETS[mktId];
-  const now = Date.now();
-  const totalAbsTick = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / TICK_MS);
-  const gameDay      = Math.floor(Math.max(0, now - GAME_EPOCH_MS) / PULSE_MS);
-  const startDay     = Math.max(0, gameDay - HISTORY_DAYS);
+  const m       = MARKETS[mktId];
+  const elapsed = Math.max(0, Date.now() - GAME_EPOCH_MS);
+  const periodStartMs = Math.floor(elapsed / SEED_PERIOD_MS) * SEED_PERIOD_MS;
+  const absTick = Math.floor((elapsed - periodStartMs) / TICK_MS);
   const seed = getMarketDaySeed(mktId);
   const rng  = mulberry32(seed);
-  const relTick = totalAbsTick - startDay * TICKS_PER_DAY;
   let price = m.base;
-  for (let t = 0; t < relTick; t++) price = seededGBMStep(rng, price, m);
+  for (let t = 0; t < absTick; t++) price = seededGBMStep(rng, price, m);
   return price;
 }
 
