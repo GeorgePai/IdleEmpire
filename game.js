@@ -266,6 +266,11 @@ const $ = id => document.getElementById(id);
 function fmt(n) {
   return n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
+function fmtShort(n) {
+  if (n >= 1e6)  return (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3)  return (n/1e3).toFixed(2) + 'K';
+  return n.toFixed(2);
+}
 function pulseStr(p) { return 'DAY ' + String(p).padStart(4,'0'); }
 function currentPulse() { return Math.floor(state.tick * PULSE_PER_TICK); }
 function toast(msg, cls='') {
@@ -1854,8 +1859,8 @@ function updatePortfolioUI() {
       html += `<div class="pfTRow">
         <span class="pfTd pfTdName"><span class="pfDot" style="background:${m.color}"></span>${m.name}</span>
         <span class="pfTd pfTdShares">${shares}</span>
-        <span class="pfTd pfTdCost">${avgCost.toFixed(2)}</span>
-        <span class="pfTd pfTdVal">$${fmt(posVal)}</span>
+        <span class="pfTd pfTdCost" title="${avgCost.toFixed(2)}">${fmtShort(avgCost)}</span>
+        <span class="pfTd pfTdVal" title="$${fmt(posVal)}">$${fmtShort(posVal)}</span>
         <span class="pfTd pfTdRet ${retCls}">${retStr}</span>
         <span class="pfTd pfTdAlloc">${pct(posVal)}</span>
       </div>`;
