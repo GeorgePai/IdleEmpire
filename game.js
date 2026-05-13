@@ -1092,7 +1092,7 @@ function renderLeaderboard(players) {
     return `<div class="lbRow${isSelf?' self':''}" data-lb-id="${p.id}">
       <span class="lbRank">${i+1}</span>
       <span class="lbName">${p.nickname||'匿名'}</span>
-      <span class="lbMkt" style="color:${mktColor};">${mkt?mkt.name:p.market||''}</span>
+      <span class="lbMkt" style="color:${mktColor};">${mkt?'正在 '+mkt.name+' 市場':p.market||''}</span>
       <span class="lbEq">${fmt(p.equity)}</span>
       ${hasDetail?'<span class="lbExpand">▸</span>':''}
     </div>${mktRows?`<div class="lbDetail hidden" data-lb-detail="${p.id}">${mktRows}</div>`:''}`;
