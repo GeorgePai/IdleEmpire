@@ -1592,7 +1592,10 @@ function startGame(loadedState) {
   state.forecastEvents= [];
 
   startBGM();
-  if (!_gameInitialized) { initFirebase(); setupLeaderboard(); }
+  if (!_gameInitialized) {
+    initFirebase(); setupLeaderboard();
+    setTimeout(syncToFirebase, 1200); // sync immediately so player appears on leaderboard
+  }
   startTick();
   if (!_gameInitialized) {
     _gameInitialized = true;
@@ -1744,6 +1747,9 @@ function init() {
     if (!val) { toast('請輸入暱稱'); return; }
     nickname = val.slice(0,20);
     localStorage.setItem('empire_nick', nickname);
+    // Fresh start: wipe all previous market states and cash
+    localStorage.removeItem('empire_mkt_states');
+    localStorage.removeItem('empire_global_cash');
     startGame(null);
   });
 
