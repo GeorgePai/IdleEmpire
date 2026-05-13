@@ -1013,8 +1013,8 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .pfPct { font-size:11px; }
 .pfDim { color:var(--text-dim); font-size:12px; }
 .pfFooter {
-  border-top: 1px solid var(--border); padding-top: 14px; margin-top: 6px;
-  display: flex; justify-content: space-between; align-items: center;
+  border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px;
+  display: flex; flex-direction: column; gap: 0;
 }
 .pfFooterLabel { font-size:12px; color:var(--text-dim); letter-spacing:1px; }
 .pfFooterVal { font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; color:var(--text); }
