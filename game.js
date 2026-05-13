@@ -321,31 +321,33 @@ function initSyncedPrices(mktId) {
   const m       = MARKETS[mktId];
   const elapsed = Math.max(0, Date.now() - GAME_EPOCH_MS);
 
-  // Position within the current 1-hour seed period (0 … 17 999 ticks)
-  const periodStartMs  = Math.floor(elapsed / SEED_PERIOD_MS) * SEED_PERIOD_MS;
-  const absTick        = Math.floor((elapsed - periodStartMs) / TICK_MS);
+  // Period-absolute tick: all devices at the same real-time moment get the same value.
+  // This is the candle-alignment anchor — gi = floor(t / tpc) is identical everywhere.
+  const periodStartMs = Math.floor(elapsed / SEED_PERIOD_MS) * SEED_PERIOD_MS;
+  const absTick       = Math.floor((elapsed - periodStartMs) / TICK_MS); // 0…17 999
 
   const histLen   = HISTORY_BARS * TICKS_PER_BAR; // 750 ticks
   const histStart = Math.max(0, absTick - histLen); // fast-forward target
-  const relTick   = absTick - histStart;            // visible ticks (≤ 750)
 
   const seed = getMarketDaySeed(mktId);
   const rng  = mulberry32(seed);
 
-  // Fast-forward to history window (≤ 17 250 steps, < 10 ms)
+  // Fast-forward to history window start (≤ 17 250 steps, < 10 ms)
   let price = m.base;
   for (let t = 0; t < histStart; t++) price = seededGBMStep(rng, price, m);
 
-  // Build visible history
+  // Store prices with PERIOD-ABSOLUTE t so candle boundaries (gi = floor(t/tpc))
+  // are identical across all devices regardless of when they opened.
   state.prices = [];
-  for (let t = 0; t <= relTick; t++) {
+  state._sessionStartTick = absTick; // for elapsed-time display
+  for (let t = histStart; t <= absTick; t++) {
     price = seededGBMStep(rng, price, m);
     const prev = state.prices.length ? state.prices[state.prices.length-1].p : m.base;
     const chg  = Math.abs(price - prev) / (prev || 1);
     state.prices.push({ t, p: +price.toFixed(4),
                         v: Math.round(800 + chg*80000 + Math.random()*500) });
   }
-  state.tick   = relTick;
+  state.tick   = absTick; // period-absolute — incremented each tick()
   priceRng     = rng;
   _closedCandles = {};
   _closedUpToGi  = {};
@@ -905,7 +907,8 @@ function toggleMute() {
 function showWin() {
   const ws=$('winScreen'); if(!ws||!ws.classList.contains('hidden')) return;
   ws.classList.remove('hidden');
-  const mins=(state.tick*TICK_MS/1000/60).toFixed(1);
+  const sessionTicks = state.tick - (state._sessionStartTick||0);
+  const mins=(sessionTicks*TICK_MS/1000/60).toFixed(1);
   const wt=$('winTime'); if(wt) wt.textContent=mins+'分鐘';
   const wtr=$('winTrades'); if(wtr) wtr.textContent=state.orderHistory.length+'筆';
 }
