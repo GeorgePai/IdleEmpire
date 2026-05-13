@@ -749,20 +749,30 @@ function placeLimitOrder(side) {
   const lp   = +raw.toFixed(2);
   if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
   state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
-  addLog(`掛${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
+  addLog(`${pulseStr(currentPulse())} 掛${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
   playSfx('orderPlace'); updateOrdersUI(); renderLog();
 }
 
 function checkPendingOrders(p) {
   state.pendingOrders = state.pendingOrders.filter(o => {
     if (o.side==='buy'&&p<=o.limitPrice) {
-      if (o.qty*o.limitPrice>state.cash) { toast('現金不足，掛單取消'); return false; }
+      if (o.qty*o.limitPrice>state.cash) {
+        toast('現金不足，掛單取消');
+        addLog(`${pulseStr(currentPulse())} 限買取消 ${o.qty}@${o.limitPrice} [現金不足]`, 'order-cancel');
+        return false;
+      }
+      addLog(`${pulseStr(currentPulse())} 限買觸發 ${o.qty}@${p.toFixed(2)}`, 'fill');
       executeMarketBuy(o.qty, o.limitPrice); playSfx('limitFill');
       state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
       return false;
     }
     if (o.side==='sell'&&p>=o.limitPrice) {
-      if (o.qty>state.shares) { toast('持倉不足，掛單取消'); return false; }
+      if (o.qty>state.shares) {
+        toast('持倉不足，掛單取消');
+        addLog(`${pulseStr(currentPulse())} 限賣取消 ${o.qty}@${o.limitPrice} [持倉不足]`, 'order-cancel');
+        return false;
+      }
+      addLog(`${pulseStr(currentPulse())} 限賣觸發 ${o.qty}@${p.toFixed(2)}`, 'fill');
       executeMarketSell(o.qty, o.limitPrice); playSfx('limitFill');
       state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
       return false;
@@ -788,15 +798,37 @@ function sell() {
 /* ============================================================
    LOG
    ============================================================ */
-const LOG_ALL=[], LOG_TRADE=[], LOG_NEWS=[];
+const LOG_ALL=[], LOG_TRADE=[], LOG_NEWS=[], LOG_ORDER=[];
+const LOG_UNREAD={all:0,trade:0,news:0,order:0};
 function addLog(text, type) {
   const entry = { text, type };
   LOG_ALL.unshift(entry);
-  if (type==='buy'||type==='sell'||type==='trade') LOG_TRADE.unshift(entry);
+  if (type==='buy'||type==='sell'||type==='trade'||type==='fill') LOG_TRADE.unshift(entry);
   if (type==='news'||type==='event') LOG_NEWS.unshift(entry);
-  if (LOG_ALL.length>200)   LOG_ALL.pop();
-  if (LOG_TRADE.length>100) LOG_TRADE.pop();
-  if (LOG_NEWS.length>100)  LOG_NEWS.pop();
+  if (type==='trade'||type==='fill'||type==='order-cancel') LOG_ORDER.unshift(entry);
+  if (LOG_ALL.length>200)    LOG_ALL.pop();
+  if (LOG_TRADE.length>100)  LOG_TRADE.pop();
+  if (LOG_NEWS.length>100)   LOG_NEWS.pop();
+  if (LOG_ORDER.length>100)  LOG_ORDER.pop();
+  // Unread tracking for inactive tabs
+  const at = state.logTab;
+  if (at!=='all')   LOG_UNREAD.all++;
+  if (at!=='trade' && (type==='buy'||type==='sell'||type==='trade'||type==='fill')) LOG_UNREAD.trade++;
+  if (at!=='news'  && (type==='news'||type==='event')) LOG_UNREAD.news++;
+  if (at!=='order' && (type==='trade'||type==='fill'||type==='order-cancel')) LOG_UNREAD.order++;
+  renderLogDots();
+}
+function renderLogDots() {
+  ['all','trade','news','order'].forEach(tab => {
+    const btn = document.querySelector('.tabBtn[data-logtab="'+tab+'"]');
+    if (!btn) return;
+    let dot = btn.querySelector('.logDot');
+    if (LOG_UNREAD[tab] > 0) {
+      if (!dot) { dot = document.createElement('span'); dot.className='logDot'; btn.appendChild(dot); }
+    } else {
+      if (dot) dot.remove();
+    }
+  });
 }
 function renderLog() {
   // Pending orders bar (always rendered regardless of tab)
@@ -821,7 +853,7 @@ function renderLog() {
     });
   }
   const tab = state.logTab;
-  const list = tab==='trade' ? LOG_TRADE : tab==='news' ? LOG_NEWS : LOG_ALL;
+  const list = tab==='trade' ? LOG_TRADE : tab==='news' ? LOG_NEWS : tab==='order' ? LOG_ORDER : LOG_ALL;
   const el = $('log'+tab.charAt(0).toUpperCase()+tab.slice(1)) || $('logAll');
   if (!el) return;
   el.innerHTML = list.slice(0,80).map(e =>
@@ -1652,9 +1684,12 @@ function init() {
       document.querySelectorAll('.tabBtn[data-logtab]').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
       state.logTab=b.dataset.logtab;
+      // Clear unread for this tab
+      LOG_UNREAD[state.logTab]=0; renderLogDots();
       document.querySelectorAll('.logList').forEach(l=>l.classList.add('hidden'));
       const target=$('log'+state.logTab.charAt(0).toUpperCase()+state.logTab.slice(1));
       if(target) target.classList.remove('hidden');
+      renderLog();
     });
   });
 
@@ -1675,7 +1710,8 @@ function init() {
     state.cash=10000; state.shares=0; state.avgCost=0; state.realizedPnl=0;
     state.pendingOrders=[]; state.orderHistory=[]; state.forecastEvents=[];
     $('winScreen').classList.add('hidden');
-    LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0;
+    LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0; LOG_ORDER.length=0;
+    Object.keys(LOG_UNREAD).forEach(k=>LOG_UNREAD[k]=0); renderLogDots();
     initSyncedPrices(selectedMkt); startTick(); maybeUpdatePanel(true);
   });
 

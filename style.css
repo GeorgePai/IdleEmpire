@@ -605,12 +605,26 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 }
 .logList::-webkit-scrollbar { width: 4px; }
 .logList::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
-.log-entry { padding: 1px 0; line-height: 1.5; }
-.log-entry.buy { color: var(--up); }
-.log-entry.sell { color: var(--down); }
-.log-entry.news { color: var(--gold); }
-.log-entry.event { color: var(--accent); }
-.log-entry .lt { color: var(--text-mute); margin-right: 6px; }
+.log-entry { padding: 1px 0; line-height: 1.5; color: var(--text-mute); }
+.log-entry.buy .lt  { color: var(--up); }
+.log-entry.sell .lt { color: var(--down); }
+.log-entry.news .lt { color: var(--gold); }
+.log-entry.event .lt { color: var(--accent); }
+.log-entry.trade .lt { color: #b39ddb; }
+.log-entry.fill .lt  { color: var(--gold); font-weight: 600; }
+.log-entry.order-cancel .lt { color: var(--text-mute); opacity: 0.55; text-decoration: line-through; }
+.log-entry .lt { margin-right: 6px; }
+/* unread dot on log tab buttons */
+.logDot {
+  display: inline-block; width: 6px; height: 6px;
+  background: var(--accent); border-radius: 50%;
+  margin-left: 4px; vertical-align: middle;
+  animation: logDotPulse 1.6s ease-in-out infinite;
+}
+@keyframes logDotPulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:0.45; transform:scale(0.7); }
+}
 
 /* ============================================================
    WIN / TOAST
