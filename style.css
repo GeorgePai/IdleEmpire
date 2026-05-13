@@ -1194,3 +1194,22 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .lbMktDot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .lbMktName { color: var(--text-mute); flex: 1; }
 .lbMktEq   { color: var(--text-mid); }
+
+/* Top bar icon buttons */
+#backGlobeBtn, #portfolioBtn, #leaderboardBtn, #codeBtn {
+  display: inline-flex; align-items: center; gap: 3px;
+}
+#portfolioBtn svg, #leaderboardBtn svg, #codeBtn svg { display: block; }
+
+/* Portfolio footer cash row */
+.pfCashRow {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0 2px; border-top: 1px solid var(--border-2);
+  font-size: 11px;
+}
+.pfCashLabel { color: var(--text-mute); font-family: 'Noto Sans TC', sans-serif; }
+.pfCashVal   { color: var(--text-mid); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.pfTotalRow  {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 0 0; border-top: 1px solid var(--border-3);
+}

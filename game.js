@@ -1554,6 +1554,7 @@ function startGame(loadedState) {
   const app=$('app'); if(app) app.classList.remove('hidden');
 
   ensurePlayerId();
+  sessionStorage.setItem('empire_session','1');
 
   if (loadedState) {
     selectedMkt = loadedState.m || selectedMkt;
@@ -1621,39 +1622,46 @@ function returnToGlobe() {
 function updatePortfolioUI() {
   const list = $('portfolioList'); if(!list) return;
   const nickEl = $('portfolioNick'); if(nickEl) nickEl.textContent = nickname || '匿名';
+  // Cash is global — always use live state.cash
+  const globalCash = state.cash;
   const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
-  // merge live state for current market
+  // Merge live current-market position (no cash — cash is global)
   const cur = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
-  all[selectedMkt] = {
-    cash:state.cash, shares:state.shares, avgCost:state.avgCost,
-    realizedPnl:state.realizedPnl, lastPrice:cur
-  };
-  let totalEq = 0, html = '';
+  all[selectedMkt] = { shares:state.shares, avgCost:state.avgCost, realizedPnl:state.realizedPnl, lastPrice:cur };
+
+  let totalPosition = 0, html = '';
   MARKET_LIST.forEach(id => {
     const m  = MARKETS[id];
     const ms = all[id];
-    if (!ms) {
-      html += `<div class="pfRow"><span class="pfMkt" style="color:${m.color}">${m.name}</span><span class="pfVal pfDim">尚未進入</span></div>`;
+    const price = ms ? (ms.lastPrice || MARKETS[id].base) : MARKETS[id].base;
+    const shares = ms ? (ms.shares || 0) : 0;
+    const avgCost = ms ? (ms.avgCost || 0) : 0;
+    const posVal  = shares * price;
+    totalPosition += posVal;
+    if (!shares) {
+      html += `<div class="pfRow">
+        <div class="pfLeft"><span class="pfMkt" style="color:${m.color}">${m.name}</span><span class="pfSub">空倉</span></div>
+        <div class="pfRight"><span class="pfVal pfDim">--</span></div>
+      </div>`;
       return;
     }
-    const price  = ms.lastPrice || m.base;
-    const equity = ms.cash + ms.shares * price;
-    totalEq += equity;
-    const pnlPct = ((equity/10000-1)*100).toFixed(1);
-    const cls = equity>10000?'up':equity<9999?'down':'';
+    const unrealized = (price - avgCost) * shares;
+    const uCls = unrealized >= 0 ? 'up' : 'down';
     html += `<div class="pfRow">
       <div class="pfLeft">
         <span class="pfMkt" style="color:${m.color}">${m.name}</span>
-        <span class="pfSub">${ms.shares>0?ms.shares+'股 @ '+ms.avgCost.toFixed(2):'空倉'}</span>
+        <span class="pfSub">${shares}股 @ ${avgCost.toFixed(2)}</span>
       </div>
       <div class="pfRight">
-        <span class="pfVal ${cls}">${fmt(equity)}</span>
-        <span class="pfPct ${cls}">${equity>=10000?'+':''}${pnlPct}%</span>
+        <span class="pfVal">${fmt(posVal)}</span>
+        <span class="pfPct ${uCls}">${unrealized>=0?'+':''}${fmt(unrealized)}</span>
       </div>
     </div>`;
   });
   list.innerHTML = html;
+  const totalEq = globalCash + totalPosition;
   const tEl = $('portfolioTotal'); if(tEl) tEl.textContent = fmt(totalEq);
+  const cEl = $('portfolioCash'); if(cEl) cEl.textContent = fmt(globalCash);
 }
 
 /* ============================================================
@@ -1718,8 +1726,11 @@ function init() {
   // Globe enter button
   const geb = $('globeEnterBtn');
   if (geb) geb.addEventListener('click', () => {
-    if (nickname) { startGame(null); }
-    else { showNicknameScreen(); }
+    if (nickname && sessionStorage.getItem('empire_session')) {
+      startGame(null); // returning from globe this session — skip nickname
+    } else {
+      showNicknameScreen(); // first visit or after page refresh
+    }
   });
 
   // Nickname screen

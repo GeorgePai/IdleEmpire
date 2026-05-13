@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=33">
+<link rel="stylesheet" href="./style.css?v=34">
 </head>
 <body>
 
@@ -55,10 +55,30 @@
         <span class="brandPulse" id="pulseLabel">DAY 0000</span>
       </div>
       <div class="topActions">
-        <button id="backGlobeBtn" title="返回市場">← 市場</button>
-        <button id="portfolioBtn" title="總資產覽">總覽</button>
-        <button id="leaderboardBtn" title="排行榜">榜</button>
-        <button id="codeBtn" title="生成存檔碼">碼</button>
+        <button id="backGlobeBtn" title="返回地球">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          返回
+        </button>
+        <button id="portfolioBtn" title="資產總覽">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <circle cx="7.5" cy="5" r="2.8" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M1.5 14c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button id="leaderboardBtn" title="排行榜">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M3.5 2h8v5.5a4 4 0 01-8 0V2z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            <path d="M1.5 3.5h2M11.5 3.5h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M7.5 11.5v2M4.5 13.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button id="codeBtn" title="存檔碼">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M7.5 1.5v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M4.5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 13h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
         <button id="muteBtn" title="音樂">♪</button>
       </div>
     </div>
@@ -114,8 +134,14 @@
       </div>
       <div id="portfolioList" class="pfList"></div>
       <div class="pfFooter">
-        <span class="pfFooterLabel">合計總資產</span>
-        <span id="portfolioTotal" class="pfFooterVal">--</span>
+        <div class="pfCashRow">
+          <span class="pfCashLabel">現金（共用）</span>
+          <span id="portfolioCash" class="pfCashVal">--</span>
+        </div>
+        <div class="pfTotalRow">
+          <span class="pfFooterLabel">合計總資產</span>
+          <span id="portfolioTotal" class="pfFooterVal">--</span>
+        </div>
       </div>
     </div>
   </div>
@@ -246,6 +272,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="./game.js?v=33"></script>
+<script src="./game.js?v=34"></script>
 </body>
 </html>
