@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=42">
+<link rel="stylesheet" href="./style.css?v=43">
 </head>
 <body>
 
@@ -20,15 +20,15 @@
   <div class="globeStars" id="globeStars"></div>
   <canvas id="globeCanvas"></canvas>
   <div class="globeOverlay">
-    <div class="globeTitle">Empire Stock</div>
+    <div class="globeTitle">Idle Empire Stock</div>
     
     <div id="globeMarketInfo" class="globeMarketInfo hidden"></div>
     <button id="globeEnterBtn" class="globeEnterBtn hidden">進入市場</button>
     <div id="globeCodeRow" class="globeCodeRow">
       <input id="globeCodeInput" class="globeCodeInput" type="text" placeholder="存檔碼 EPC.xxxxx"><button id="globePasteBtn" class="globePasteBtn">貼上</button><button id="globeCodeLoadBtn" class="globeCodeLoadBtn">載入</button>
     </div>
-  <div id="globeLoadedSummary" class="globeLoadedSummary hidden"></div>
   </div>
+  <div id="globeLoadedSummary" class="globeLoadedSummary hidden"></div>
 </div>
 
 <!-- ===== NICKNAME SCREEN ===== -->
@@ -137,6 +137,7 @@
         <div class="pfCashRow">
           <span class="pfCashLabel">現金</span>
           <span id="portfolioCash" class="pfCashVal">--</span>
+          <span id="portfolioCashAlloc" class="pfAlloc">--</span>
         </div>
         <div class="pfTotalRow">
           <span class="pfFooterLabel">合計總資產</span>
@@ -270,6 +271,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="./game.js?v=42"></script>
+<script src="./game.js?v=43"></script>
 </body>
 </html>

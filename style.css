@@ -703,7 +703,7 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .globeTitle {
   position: absolute; top: 32px; left: 50%; transform: translateX(-50%);
   font-family: 'JetBrains Mono', monospace; font-weight: 700;
-  font-size: 22px; letter-spacing: 8px; color: #fff;
+  font-size: 16px; letter-spacing: 5px; color: #fff; white-space: nowrap;
   text-shadow: 0 0 24px rgba(41, 98, 255, 0.8);
   pointer-events: none;
 }
@@ -1221,52 +1221,59 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 
 
 
-/* ── Globe loaded summary ──────────────────────────────────── */
-.globeLoadedSummary { pointer-events: auto; width: 100%; display: flex; justify-content: center; margin-bottom: 12px; }
+/* ── Globe loaded summary (HUD style, above globe) ─────────── */
+.globeLoadedSummary {
+  position: absolute; z-index: 3;
+  top: 70px; left: 50%; transform: translateX(-50%);
+  width: 90%; max-width: 300px;
+  pointer-events: auto;
+  animation: fadeSlideUp .2s ease;
+}
 .globeLoadedSummary.hidden { display: none; }
 
 .glbSumCard {
-  width: 88%; max-width: 300px;
-  background: rgba(10,14,20,0.72);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 10px;
-  padding: 18px 20px 16px;
-  text-align: center;
-  backdrop-filter: blur(12px);
-  animation: fadeSlideUp .25s ease;
+  background: rgba(8,12,20,0.78);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 10px 14px 12px;
+  backdrop-filter: blur(10px);
+  font-family: 'JetBrains Mono', monospace;
 }
 .glbSumNick {
-  font-family: 'Noto Sans TC', sans-serif;
-  font-size: 11px; color: var(--text-dim);
-  letter-spacing: 3px; text-transform: uppercase;
-  margin-bottom: 6px;
+  font-size: 9px; color: var(--text-dim);
+  letter-spacing: 2px; text-transform: uppercase;
+  margin-bottom: 4px; font-family: 'Noto Sans TC', sans-serif;
 }
 .glbSumEq {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 28px; font-weight: 700; color: #fff;
-  letter-spacing: 1px; margin-bottom: 14px;
+  font-size: 18px; font-weight: 700; color: #fff;
+  letter-spacing: 1px; margin-bottom: 8px;
 }
 .glbSumDetail {
-  border-top: 1px solid rgba(255,255,255,0.06);
-  padding-top: 10px; margin-bottom: 14px;
-  display: flex; flex-direction: column; gap: 6px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+  padding-top: 7px; margin-bottom: 9px;
+  display: flex; flex-direction: column; gap: 4px;
 }
 .glbSumMktRow {
-  display: flex; align-items: center; gap: 8px;
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px;
 }
-.glbSumMktDot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.glbSumMktName { flex: 1; text-align: left; color: var(--text-mid); }
-.glbSumMktVal  { color: var(--text); }
+.glbSumMktDot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.glbSumMktName { flex: 1; color: var(--text-mid); }
+.glbSumMktVal  { color: var(--text); letter-spacing: 0.5px; }
 
 .glbSumBtn {
-  width: 100%; padding: 11px 0;
+  width: 100%; padding: 8px 0;
   background: linear-gradient(180deg, #3a7aff 0%, #2962ff 100%);
-  border: none; border-radius: 6px;
+  border: none; border-radius: 5px;
   color: #fff; font-family: 'JetBrains Mono', monospace;
-  font-size: 12px; font-weight: 700; letter-spacing: 3px;
+  font-size: 11px; font-weight: 700; letter-spacing: 3px;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 0 rgba(0,0,0,0.4), 0 0 20px rgba(41,98,255,0.35);
-  transition: opacity .15s;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 0 rgba(0,0,0,0.4), 0 0 16px rgba(41,98,255,0.3);
 }
 .glbSumBtn:active { transform: translateY(1px); box-shadow: none; }
+
+/* Portfolio alloc % */
+.pfAlloc { font-size: 10px; color: var(--text-dim); letter-spacing: 0.5px; margin-top: 1px; }
+.pfRight { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.pfCashRow { display: flex; align-items: center; gap: 8px; }
+#portfolioCashAlloc { font-size: 10px; color: var(--text-dim); }

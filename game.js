@@ -966,32 +966,98 @@ function playSfx(kind) {
 }
 
 const BGM_SRCS = {
-  globe:  './assets/audio/music.mp3',
   empire: './assets/audio/bgm.mp3',
   tokyo:  './assets/audio/bgm.mp3',
 };
 let _bgmEl=null, _bgmScene=null, _bgmMuted=false, _bgmFiId=null;
 const BGM_VOL=0.22;
-function playBGM(scene) {
-  const src = BGM_SRCS[scene] || BGM_SRCS.globe;
-  if (_bgmScene===scene && _bgmEl && !_bgmEl.paused) return;
-  _bgmScene = scene;
 
-  // Stop all currently playing audio immediately then fade out
-  const dying = _bgmEl;
-  if (dying) {
-    dying.muted = true;  // instant silence
-    setTimeout(()=>{ dying.pause(); dying.src=''; }, 300);
+// ── Globe synthesiser ────────────────────────────────────────────────────────
+const _synth = { running:false, timer:null, master:null, step:0 };
+function startGlobeSynth() {
+  if (_synth.running) return;
+  if (!audioCtx) { try { audioCtx=new(window.AudioContext||window.webkitAudioContext)(); } catch(e){return;} }
+  if (audioCtx.state==='suspended') audioCtx.resume();
+  _synth.running=true; _synth.step=0;
+  const master=audioCtx.createGain();
+  master.gain.value=_bgmMuted?0:0.10;
+  master.connect(audioCtx.destination);
+  _synth.master=master;
+  // Soft delay for warmth
+  const dly=audioCtx.createDelay(1); dly.delayTime.value=0.32;
+  const dlg=audioCtx.createGain(); dlg.gain.value=0.18;
+  dly.connect(dlg); dlg.connect(master); // delay → master
+  // C-major arpeggios: Cmaj7 · Em7 · Am7 · Fmaj7
+  const chords=[
+    [261.63,329.63,392.00,493.88],
+    [164.81,196.00,246.94,329.63],
+    [220.00,261.63,329.63,415.30],
+    [174.61,220.00,261.63,349.23]
+  ];
+  const pat=[0,1,2,3,2,1,0,2]; // arpeggio order within chord
+  const STEP_S=0.42;            // note spacing ~71 BPM 8th
+  function tick() {
+    if(!_synth.running) return;
+    const ci=Math.floor(_synth.step/8)%chords.length;
+    const ni=pat[_synth.step%8];
+    const freq=chords[ci][ni];
+    const t=audioCtx.currentTime+0.01;
+    // Main note
+    const osc=audioCtx.createOscillator();
+    const env=audioCtx.createGain();
+    osc.type='triangle'; osc.frequency.value=freq;
+    osc.connect(env); env.connect(master); env.connect(dly);
+    env.gain.setValueAtTime(0,t);
+    env.gain.linearRampToValueAtTime(0.5,t+0.04);
+    env.gain.setTargetAtTime(0.08,t+0.08,0.12);
+    env.gain.exponentialRampToValueAtTime(0.001,t+STEP_S*0.95);
+    osc.start(t); osc.stop(t+STEP_S);
+    // Octave-down pad every 8 steps
+    if(_synth.step%8===0){
+      const pad=audioCtx.createOscillator();
+      const pg=audioCtx.createGain(); pad.type='sine'; pad.frequency.value=freq/2;
+      pad.connect(pg); pg.connect(master);
+      pg.gain.setValueAtTime(0,t);
+      pg.gain.linearRampToValueAtTime(0.12,t+0.1);
+      pg.gain.exponentialRampToValueAtTime(0.001,t+STEP_S*3.5);
+      pad.start(t); pad.stop(t+STEP_S*4);
+    }
+    _synth.step++;
+    _synth.timer=setTimeout(tick, STEP_S*1000-15);
   }
-  // Cancel any in-progress fade-in
-  if (_bgmFiId) { clearInterval(_bgmFiId); _bgmFiId=null; }
+  tick();
+}
+function stopGlobeSynth() {
+  _synth.running=false;
+  if(_synth.timer){clearTimeout(_synth.timer);_synth.timer=null;}
+  if(_synth.master&&audioCtx){
+    _synth.master.gain.setTargetAtTime(0,audioCtx.currentTime,0.15);
+    setTimeout(()=>{try{_synth.master.disconnect();}catch(e){}; _synth.master=null;},600);
+  }
+}
 
-  const next = new Audio(src);
+function playBGM(scene) {
+  if (scene==='globe') {
+    // Stop mp3
+    if(_bgmEl){_bgmEl.muted=true;setTimeout(()=>{_bgmEl.pause();_bgmEl.src='';},300);_bgmEl=null;}
+    if(_bgmFiId){clearInterval(_bgmFiId);_bgmFiId=null;}
+    _bgmScene='globe';
+    startGlobeSynth();
+    return;
+  }
+  // Not globe — stop synth
+  stopGlobeSynth();
+  const src=BGM_SRCS[scene]||BGM_SRCS.empire;
+  if(_bgmScene===scene&&_bgmEl&&!_bgmEl.paused)return;
+  _bgmScene=scene;
+  const dying=_bgmEl;
+  if(dying){dying.muted=true;setTimeout(()=>{dying.pause();dying.src='';},300);}
+  if(_bgmFiId){clearInterval(_bgmFiId);_bgmFiId=null;}
+  const next=new Audio(src);
   next.loop=true; next.volume=0; next.muted=_bgmMuted;
   next.play().catch(()=>{});
-  _bgmEl = next;
-
-  _bgmFiId = setInterval(()=>{
+  _bgmEl=next;
+  _bgmFiId=setInterval(()=>{
     if(!_bgmEl||_bgmEl!==next){clearInterval(_bgmFiId);_bgmFiId=null;return;}
     next.volume=Math.min(BGM_VOL,next.volume+0.015);
     if(next.volume>=BGM_VOL){clearInterval(_bgmFiId);_bgmFiId=null;}
@@ -1000,6 +1066,7 @@ function playBGM(scene) {
 function toggleMute() {
   _bgmMuted=!_bgmMuted;
   if(_bgmEl)_bgmEl.muted=_bgmMuted;
+  if(_synth.master)_synth.master.gain.value=_bgmMuted?0:0.10;
   const mb=$('muteBtn'); if(mb) mb.style.opacity=_bgmMuted?'0.35':'1';
 }
 
@@ -1735,13 +1802,14 @@ function updatePortfolioUI() {
     if (!shares) {
       html += `<div class="pfRow">
         <div class="pfLeft"><span class="pfMkt" style="color:${m.color}">${m.name}</span><span class="pfSub">空倉</span></div>
-        <div class="pfRight"><span class="pfVal pfDim">--</span></div>
+        <div class="pfRight"><span class="pfVal pfDim">--</span><span class="pfAlloc pfDim">--</span></div>
       </div>`;
       return;
     }
     const unrealized = (price - avgCost) * shares;
     const uCls = unrealized >= 0 ? 'up' : 'down';
-    html += `<div class="pfRow">
+    // placeholder — alloc % added after totalEq is known
+    html += `<div class="pfRow" data-posval="${posVal}">
       <div class="pfLeft">
         <span class="pfMkt" style="color:${m.color}">${m.name}</span>
         <span class="pfSub">${shares}股 @ ${avgCost.toFixed(2)}</span>
@@ -1754,6 +1822,24 @@ function updatePortfolioUI() {
   });
   list.innerHTML = html;
   const totalEq = globalCash + totalPosition;
+  // Inject alloc % into each row
+  const pRows = list.querySelectorAll('.pfRow[data-posval]');
+  pRows.forEach(row => {
+    const pv = parseFloat(row.dataset.posval);
+    const alloc = totalEq > 0 ? (pv/totalEq*100).toFixed(1) : '0.0';
+    const right = row.querySelector('.pfRight');
+    if (right) {
+      const sp = document.createElement('span');
+      sp.className='pfAlloc'; sp.textContent=alloc+'%';
+      right.appendChild(sp);
+    }
+  });
+  // Cash row alloc
+  if (totalEq > 0) {
+    const cashAlloc = (globalCash/totalEq*100).toFixed(1);
+    const cAllocEl = $('portfolioCashAlloc');
+    if (cAllocEl) cAllocEl.textContent = cashAlloc+'%';
+  }
   const tEl = $('portfolioTotal'); if(tEl) tEl.textContent = '$'+fmt(totalEq);
   const cEl = $('portfolioCash'); if(cEl) cEl.textContent = '$'+fmt(globalCash);
 }
@@ -1859,6 +1945,7 @@ function init() {
     nickname = loaded.n || '玩家';
     localStorage.setItem('empire_nick', nickname);
     selectedMkt = loaded.m || 'empire';
+    const ci = $('globeCodeInput'); if(ci) ci.value = '';
     // Show summary on globe instead of going to game directly
     showGlobeSummary(loaded);
   });
