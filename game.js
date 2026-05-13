@@ -646,8 +646,7 @@ function drawCandleChart() {
     ctx.strokeStyle='rgba(240,185,11,0.6)'; ctx.lineWidth=1;
     ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle='rgba(240,185,11,0.8)'; ctx.font='10px JetBrains Mono, monospace';
-    ctx.textAlign='right'; ctx.fillText('成本 '+state.avgCost.toFixed(2), W-4, cy-3);
-    ctx.textAlign='left';
+    ctx.textAlign='left'; ctx.fillText('成本 '+state.avgCost.toFixed(2), 5, cy-3);
   }
 
   // pending limit lines
@@ -658,9 +657,8 @@ function drawCandleChart() {
     ctx.lineWidth=1; ctx.setLineDash([3,5]); ctx.stroke(); ctx.setLineDash([]);
     const lColor = o.side==='buy' ? 'rgba(38,166,154,0.9)':'rgba(239,83,80,0.9)';
     ctx.fillStyle=lColor; ctx.font='10px JetBrains Mono, monospace';
-    ctx.textAlign='right';
-    ctx.fillText((o.side==='buy'?'委買 ':'委賣 ')+o.limitPrice.toFixed(2), W-4, ly-3);
     ctx.textAlign='left';
+    ctx.fillText((o.side==='buy'?'委買 ':'委賣 ')+o.limitPrice.toFixed(2), 5, ly-3);
   });
 
   // candles
@@ -967,17 +965,38 @@ function playSfx(kind) {
   } catch(e){}
 }
 
-let bgm=null, bgmStarted=false;
-function startBGM() {
-  if (bgmStarted) return; bgmStarted=true;
-  try {
-    bgm=new Audio('./assets/audio/bgm.mp3');
-    bgm.loop=true; bgm.volume=0.22; bgm.play().catch(()=>{});
-  } catch(e){}
+const BGM_SRCS = {
+  globe:  './assets/audio/music.mp3',
+  empire: './assets/audio/bgm.mp3',
+  tokyo:  './assets/audio/bgm.mp3',
+};
+let _bgmEl=null, _bgmScene=null, _bgmMuted=false;
+const BGM_VOL=0.22;
+function playBGM(scene) {
+  const src = BGM_SRCS[scene] || BGM_SRCS.globe;
+  if (_bgmScene===scene && _bgmEl && !_bgmEl.paused) return;
+  _bgmScene = scene;
+  const next = new Audio(src);
+  next.loop=true; next.volume=0; next.muted=_bgmMuted;
+  next.play().catch(()=>{});
+  if (_bgmEl) {
+    const dying=_bgmEl;
+    const fo=setInterval(()=>{
+      dying.volume=Math.max(0,dying.volume-0.022);
+      if(dying.volume<=0){clearInterval(fo);dying.pause();dying.src='';}
+    },40);
+  }
+  _bgmEl=next;
+  const fi=setInterval(()=>{
+    if(!_bgmEl||_bgmEl!==next){clearInterval(fi);return;}
+    next.volume=Math.min(BGM_VOL,next.volume+0.011);
+    if(next.volume>=BGM_VOL)clearInterval(fi);
+  },40);
 }
 function toggleMute() {
-  if (bgm) bgm.muted=!bgm.muted;
-  const mb=$('muteBtn'); if(mb) mb.style.opacity=bgm&&bgm.muted?'0.35':'1';
+  _bgmMuted=!_bgmMuted;
+  if(_bgmEl)_bgmEl.muted=_bgmMuted;
+  const mb=$('muteBtn'); if(mb) mb.style.opacity=_bgmMuted?'0.35':'1';
 }
 
 /* ============================================================
@@ -1527,8 +1546,7 @@ function selectMarket(id) {
   const info = $('globeMarketInfo');
   if (info) {
     info.innerHTML = `<span class="gmName" style="color:${m.color}">${m.name}</span>
-      <span class="gmSub">${m.sub}</span>
-      <span class="gmStats">波動 ${['低','低','高','中','中'][MARKET_LIST.indexOf(id)]} · 基礎價 ${m.base}</span>`;
+      <span class="gmSub">${m.sub}</span>`;
     info.classList.remove('hidden');
   }
   const btn = $('globeEnterBtn');
@@ -1615,7 +1633,7 @@ function startGame(loadedState) {
   state.pendingOrders = []; state.orderHistory = [];
   state.forecastEvents= [];
 
-  startBGM();
+  playBGM(selectedMkt);
   if (!_gameInitialized) {
     initFirebase(); setupLeaderboard();
     setTimeout(syncToFirebase, 1200); // sync immediately so player appears on leaderboard
@@ -1632,6 +1650,38 @@ function startGame(loadedState) {
 /* ============================================================
    RETURN TO GLOBE
    ============================================================ */
+function showGlobeSummary(loaded) {
+  const el = $('globeLoadedSummary'); if(!el) { startGame(loaded); return; }
+  const ms = loaded.ms || {};
+  const cash = loaded.ca || 10000;
+  let posHtml = '';
+  MARKET_LIST.forEach(id => {
+    const m = MARKETS[id]; if(!m) return;
+    const s = ms[id];
+    const posVal = s && s.sh > 0 ? s.sh * (s.lp || m.base) : 0;
+    if (posVal > 0) posHtml += `<span style="color:${m.color}">${m.name} $${posVal.toFixed(0)}</span>`;
+  });
+  const totalPos = MARKET_LIST.reduce((t,id)=>{
+    const s=ms[id]; return t+(s&&s.sh>0?s.sh*(s.lp||MARKETS[id].base):0);
+  },0);
+  const totalEq = cash + totalPos;
+  el.innerHTML = `
+    <div class="glbSumNick">${loaded.n||'玩家'}</div>
+    <div class="glbSumEq">$${totalEq.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    <div class="glbSumSub">現金 $${cash.toFixed(2)}${posHtml?' · '+posHtml:''}</div>
+    <button id="glbSumEnter" class="globeEnterBtn" style="margin-top:10px;position:static;display:inline-flex">進入市場</button>
+  `;
+  el.classList.remove('hidden');
+  selectMarket(selectedMkt);
+  const enterBtn = el.querySelector('#glbSumEnter');
+  if (enterBtn) enterBtn.addEventListener('click', () => {
+    el.classList.add('hidden');
+    startGame(_globeSummaryLoaded);
+  });
+  _globeSummaryLoaded = loaded;
+}
+let _globeSummaryLoaded = null;
+
 function returnToGlobe() {
   saveMarketState(selectedMkt);
   if (_tickInterval) { clearInterval(_tickInterval); _tickInterval = null; }
@@ -1641,6 +1691,7 @@ function returnToGlobe() {
   $('globeScreen').classList.remove('hidden');
   selectMarket(selectedMkt);
   animateGlobe();
+  playBGM('globe');
 }
 
 /* ============================================================
@@ -1745,6 +1796,7 @@ function init() {
     setupGlobeEvents();
     animateGlobe();
     selectMarket('empire');
+    playBGM('globe');
   }
 
   // Globe enter button
@@ -1774,6 +1826,14 @@ function init() {
     startGame(null);
   });
 
+  // Globe paste button
+  const globePasteBtn = $('globePasteBtn');
+  if (globePasteBtn) globePasteBtn.addEventListener('click', () => {
+    navigator.clipboard.readText().then(txt => {
+      const inp = $('globeCodeInput'); if(inp) inp.value = txt.trim();
+    }).catch(()=>{ toast('請手動貼上存檔碼'); });
+  });
+
   // Globe code load button
   const globeCodeLoadBtn = $('globeCodeLoadBtn');
   if (globeCodeLoadBtn) globeCodeLoadBtn.addEventListener('click', () => {
@@ -1783,7 +1843,8 @@ function init() {
     nickname = loaded.n || '玩家';
     localStorage.setItem('empire_nick', nickname);
     selectedMkt = loaded.m || 'empire';
-    startGame(loaded);
+    // Show summary on globe instead of going to game directly
+    showGlobeSummary(loaded);
   });
 
   // Nickname back button

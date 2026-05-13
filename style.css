@@ -637,7 +637,7 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .winInner #winTime, .winInner #winTrades { color: var(--text); font-family: 'JetBrains Mono', monospace; }
 
 #toast {
-  position: fixed; bottom: 130px; left: 50%; transform: translateX(-50%);
+  position: fixed; top: 72px; left: 50%; transform: translateX(-50%);
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border-3);
@@ -655,8 +655,8 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 #toast.crash    { border-left-color: var(--down); }
 #toast.surge    { border-left-color: var(--up); }
 #toast.upcoming { border-left-color: var(--accent); }
-@keyframes toastIn  { from { opacity:0; transform:translateX(-50%) translateY(14px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
-@keyframes toastOut { from { opacity:1; transform:translateX(-50%) translateY(0); } to { opacity:0; transform:translateX(-50%) translateY(-10px); } }
+@keyframes toastIn  { from { opacity:0; transform:translateX(-50%) translateY(-10px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+@keyframes toastOut { from { opacity:1; transform:translateX(-50%) translateY(0); } to { opacity:0; transform:translateX(-50%) translateY(-8px); } }
 
 @media (min-width: 600px) {
   #app { max-width: 440px; height: 95vh; max-height: 920px; margin: 2.5vh auto; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 0 60px rgba(0, 0, 0, 0.6); }
@@ -716,14 +716,10 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 }
 
 .globeMarketInfo {
-  background: rgba(19, 23, 34, 0.88);
-  border: 1px solid var(--border-3);
-  border-radius: 8px;
-  padding: 14px 20px;
+  padding: 8px 16px;
   max-width: 280px; width: 90%;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   text-align: center;
-  backdrop-filter: blur(8px);
   pointer-events: auto;
   animation: fadeSlideUp 0.2s ease;
 }
@@ -1213,3 +1209,24 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   display: flex; justify-content: space-between; align-items: center;
   padding: 6px 0 0; border-top: 1px solid var(--border-3);
 }
+
+.globePasteBtn {
+  padding: 8px 10px; border-radius: 6px;
+  background: rgba(255,255,255,0.07); color: var(--text-mid);
+  border: 1px solid var(--border-3);
+  font-family: 'Noto Sans TC', sans-serif; font-size: 11px;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s;
+}
+.globePasteBtn:hover { background: rgba(255,255,255,0.12); }
+
+/* Globe loaded summary */
+.globeLoadedSummary {
+  pointer-events: auto;
+  text-align: center; margin-bottom: 10px;
+  animation: fadeSlideUp 0.25s ease;
+}
+.globeLoadedSummary.hidden { display: none; }
+.glbSumNick { font-family: 'Noto Sans TC', sans-serif; font-size: 11px; color: var(--text-dim); letter-spacing: 2px; margin-bottom: 4px; }
+.glbSumEq { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700; color: #fff; letter-spacing: 1px; }
+.glbSumSub { font-size: 10px; color: var(--text-dim); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
