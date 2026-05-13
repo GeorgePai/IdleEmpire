@@ -645,6 +645,9 @@ function drawCandleChart() {
     ctx.beginPath(); ctx.moveTo(0,cy); ctx.lineTo(W,cy);
     ctx.strokeStyle='rgba(240,185,11,0.6)'; ctx.lineWidth=1;
     ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(240,185,11,0.8)'; ctx.font='10px JetBrains Mono, monospace';
+    ctx.textAlign='right'; ctx.fillText('成本 '+state.avgCost.toFixed(2), W-4, cy-3);
+    ctx.textAlign='left';
   }
 
   // pending limit lines
@@ -653,6 +656,11 @@ function drawCandleChart() {
     ctx.beginPath(); ctx.moveTo(0,ly); ctx.lineTo(W,ly);
     ctx.strokeStyle = o.side==='buy' ? 'rgba(38,166,154,0.5)':'rgba(239,83,80,0.5)';
     ctx.lineWidth=1; ctx.setLineDash([3,5]); ctx.stroke(); ctx.setLineDash([]);
+    const lColor = o.side==='buy' ? 'rgba(38,166,154,0.9)':'rgba(239,83,80,0.9)';
+    ctx.fillStyle=lColor; ctx.font='10px JetBrains Mono, monospace';
+    ctx.textAlign='right';
+    ctx.fillText((o.side==='buy'?'委買 ':'委賣 ')+o.limitPrice.toFixed(2), W-4, ly-3);
+    ctx.textAlign='left';
   });
 
   // candles
@@ -809,14 +817,14 @@ function buy() {
   if (state.tradingMode==='limit') return placeLimitOrder('buy');
   const p=currentPrice(); let qty=getQty();
   if (p*qty>state.cash){qty=Math.floor(state.cash/p);if(qty<=0){toast('現金不足');playSfx('reject');return;}}
-  executeMarketBuy(qty,p); playSfx('marketBuy');
+  executeMarketBuy(qty,p); playSfx('marketBuy'); toast(`買入 ${qty} 股 @ ${p.toFixed(2)}`,'buy');
 }
 function sell() {
   if (state.tradingMode==='limit') return placeLimitOrder('sell');
   if (state.shares<=0){toast('沒有持倉');playSfx('reject');return;}
   const p=currentPrice(); const qty=state.qtyMode==='max'?state.shares:Math.min(state.shares,getQty());
   if (qty<=0) return;
-  executeMarketSell(qty,p); playSfx('marketSell');
+  executeMarketSell(qty,p); playSfx('marketSell'); toast(`賣出 ${qty} 股 @ ${p.toFixed(2)}`,'sell');
 }
 
 /* ============================================================
@@ -826,9 +834,9 @@ const LOG_ALL=[], LOG_TRADE=[], LOG_NEWS=[];
 const LOG_UNREAD={all:0,trade:0,news:0,order:0};
 function addLog(text, type) {
   const entry = { text, type };
-  LOG_ALL.unshift(entry);
-  if (type==='buy'||type==='sell'||type==='trade'||type==='fill'||type==='order-cancel') LOG_TRADE.unshift(entry);
-  if (type==='news'||type==='event') LOG_NEWS.unshift(entry);
+  LOG_ALL.push(entry);
+  if (type==='buy'||type==='sell'||type==='trade'||type==='fill'||type==='order-cancel') LOG_TRADE.push(entry);
+  if (type==='news'||type==='event') LOG_NEWS.push(entry);
   if (LOG_ALL.length>200)    LOG_ALL.pop();
   if (LOG_TRADE.length>100)  LOG_TRADE.pop();
   if (LOG_NEWS.length>100)   LOG_NEWS.pop();
@@ -892,9 +900,10 @@ function renderLog() {
   const list = tab==='trade' ? LOG_TRADE : tab==='news' ? LOG_NEWS : LOG_ALL;
   const el = $('log'+tab.charAt(0).toUpperCase()+tab.slice(1)) || $('logAll');
   if (!el) return;
-  el.innerHTML = list.slice(0,80).map(e =>
+  el.innerHTML = list.slice(-80).map(e =>
     `<div class="log-entry ${e.type}"><span class="lt">${e.text}</span></div>`
   ).join('');
+  el.scrollTop = el.scrollHeight;
 }
 
 /* ============================================================
@@ -1078,7 +1087,7 @@ function renderLeaderboard(players) {
       // Cash row first
       if (p.cash != null) {
         mktRows += `<div class="lbMktRow"><span class="lbMktDot" style="background:var(--text-mute)"></span>`+
-                   `<span class="lbMktName">現金</span><span class="lbMktEq">${fmt(p.cash)}</span></div>`;
+                   `<span class="lbMktName">現金</span><span class="lbMktEq">$${fmt(p.cash)}</span></div>`;
       }
       // All markets
       MARKET_LIST.forEach(id => {
@@ -1086,14 +1095,13 @@ function renderLeaderboard(players) {
         const posVal = p.markets[id] || 0;
         const cls = posVal > 0 ? '' : ' lbMktDim';
         mktRows += `<div class="lbMktRow${cls}"><span class="lbMktDot" style="background:${m.color}"></span>`+
-                   `<span class="lbMktName">${m.name}</span><span class="lbMktEq">${posVal>0?fmt(posVal):'--'}</span></div>`;
+                   `<span class="lbMktName">${m.name}</span><span class="lbMktEq">${posVal>0?"$"+fmt(posVal):"--"}</span></div>`;
       });
     }
     return `<div class="lbRow${isSelf?' self':''}" data-lb-id="${p.id}">
       <span class="lbRank">${i+1}</span>
       <span class="lbName">${p.nickname||'匿名'}</span>
-      <span class="lbMkt" style="color:${mktColor};">${mkt?'正在 '+mkt.name+' 市場':p.market||''}</span>
-      <span class="lbEq">${fmt(p.equity)}</span>
+      <span class="lbEq">$${fmt(p.equity)}</span>
       ${hasDetail?'<span class="lbExpand">▸</span>':''}
     </div>${mktRows?`<div class="lbDetail hidden" data-lb-detail="${p.id}">${mktRows}</div>`:''}`;
   }).join('');
@@ -1679,8 +1687,8 @@ function updatePortfolioUI() {
   });
   list.innerHTML = html;
   const totalEq = globalCash + totalPosition;
-  const tEl = $('portfolioTotal'); if(tEl) tEl.textContent = fmt(totalEq);
-  const cEl = $('portfolioCash'); if(cEl) cEl.textContent = fmt(globalCash);
+  const tEl = $('portfolioTotal'); if(tEl) tEl.textContent = '$'+fmt(totalEq);
+  const cEl = $('portfolioCash'); if(cEl) cEl.textContent = '$'+fmt(globalCash);
 }
 
 /* ============================================================
@@ -1688,10 +1696,7 @@ function updatePortfolioUI() {
    ============================================================ */
 function showDataCode() {
   const code = encodeGameState(state);
-  const el = $('dataCodeOutput'); if(!el) return;
-  el.value = code;
-  el.select();
-  navigator.clipboard.writeText(code).then(()=>toast('數據碼已複製！')).catch(()=>toast('請手動複製'));
+  navigator.clipboard.writeText(code).catch(()=>{});
   playSfx('click');
 }
 

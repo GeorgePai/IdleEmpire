@@ -637,17 +637,17 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .winInner #winTime, .winInner #winTrades { color: var(--text); font-family: 'JetBrains Mono', monospace; }
 
 #toast {
-  position: fixed; top: 56px; right: 12px;
+  position: fixed; bottom: 130px; left: 50%; transform: translateX(-50%);
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border-3);
   border-left: 3px solid var(--accent);
-  padding: 10px 14px; font-size: 12px; z-index: 300;
+  padding: 10px 20px; font-size: 12px; z-index: 300;
   border-radius: 6px; letter-spacing: 0.4px;
   animation: toastIn .22s cubic-bezier(0.15,0.8,0.25,1) both;
   pointer-events: none;
   box-shadow: 0 6px 24px rgba(0,0,0,0.65), 0 0 0 1px rgba(41,98,255,0.15);
-  max-width: 220px; line-height: 1.4;
+  white-space: nowrap; line-height: 1.4;
   font-family: 'Noto Sans TC', sans-serif;
 }
 #toast.toastOut { animation: toastOut .35s ease forwards; }
@@ -655,8 +655,8 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 #toast.crash    { border-left-color: var(--down); }
 #toast.surge    { border-left-color: var(--up); }
 #toast.upcoming { border-left-color: var(--accent); }
-@keyframes toastIn  { from { opacity:0; transform:translateX(48px); } to { opacity:1; transform:translateX(0); } }
-@keyframes toastOut { from { opacity:1; transform:translateY(0); }    to { opacity:0; transform:translateY(-14px); } }
+@keyframes toastIn  { from { opacity:0; transform:translateX(-50%) translateY(14px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+@keyframes toastOut { from { opacity:1; transform:translateX(-50%) translateY(0); } to { opacity:0; transform:translateX(-50%) translateY(-10px); } }
 
 @media (min-width: 600px) {
   #app { max-width: 440px; height: 95vh; max-height: 920px; margin: 2.5vh auto; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 0 60px rgba(0, 0, 0, 0.6); }

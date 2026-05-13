@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=38">
+<link rel="stylesheet" href="./style.css?v=39">
 </head>
 <body>
 
@@ -251,9 +251,7 @@
         <span class="overlayTitle">存檔碼</span>
         <button class="overlayClose" data-close="codeOverlay">✕</button>
       </div>
-      <p class="codeHint">複製此碼可在其他裝置或新遊戲中載入你的進度。</p>
-      <textarea id="dataCodeOutput" class="lbCodeOutput" readonly placeholder="點擊生成..."></textarea>
-      <button id="dataCodeBtn" class="lbCodeBtn">生成並複製</button>
+      <p class="codeHint" style="line-height:1.7;margin:0">你的存檔進度已複製到剪貼板。<br>請貼到記事本或任何地方妥善保存，<br>下次可在主畫面輸入它繼續遊戲。</p>
     </div>
   </div>
 
@@ -272,6 +270,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="./game.js?v=38"></script>
+<script src="./game.js?v=39"></script>
 </body>
 </html>
