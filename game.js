@@ -390,26 +390,20 @@ function nextPrice(suppressNews) {
                   +state.sigma*gauss()*Math.sqrt(TICK_MS/1000));
     p = Math.max(0.01, p);
   }
-  if (state._eventBoost && state._eventBoost.ticks > 0) {
-    p *= state._eventBoost.factor;
-    state._eventBoost.ticks--;
-  }
   p = +p.toFixed(4);
   const chgPct = Math.abs(p-last)/(last||1);
   const v = Math.round(800+chgPct*80000+Math.random()*500);
   state.prices.push({ t:state.tick, p, v });
-  if (state.prices.length > 600) state.prices.shift();
+  if (state.prices.length > 800) state.prices.shift();
   if (!suppressNews) maybeAnnounceForecast();
   return p;
 }
 
 function triggerForecastEvent(ev) {
-  // Apply a drift multiplier for next ~8 ticks (no price injection — keeps OHLC deterministic)
-  const impact = ev.dir === 'good' ? (0.04 + Math.random()*0.04) : -(0.04 + Math.random()*0.04);
-  state._eventBoost = { ticks: 8, factor: 1 + impact };
-  const text = ev.dir==='good'
-    ? (state.newsGood[Math.floor(Math.random()*state.newsGood.length)]||'市場利好消息發酵')
-    : (state.newsBad[Math.floor(Math.random()*state.newsBad.length)]||'市場利空消息衝擊');
+  // News + sfx only — price impact comes from seeded GBM (black-swan events inside
+  // seededGBMStep already create volatility spikes, so no extra boost needed).
+  const pool = ev.dir==='good' ? state.newsGood : state.newsBad;
+  const text = pool[Math.floor(Math.random()*pool.length)] || (ev.dir==='good' ? '市場利好消息發酵' : '市場利空消息衝擊');
   addLog(pulseStr(currentPulse()) + ' ' + text, 'news');
   playSfx('news');
 }
