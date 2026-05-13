@@ -637,7 +637,7 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .winInner #winTime, .winInner #winTrades { color: var(--text); font-family: 'JetBrains Mono', monospace; }
 
 #toast {
-  position: fixed; bottom: 88px; right: 12px;
+  position: fixed; top: 56px; right: 12px;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border-3);
@@ -1174,11 +1174,13 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 
 /* Leaderboard expandable market detail */
 .lbExpand {
-  margin-left: auto; color: var(--text-mute); font-size: 9px;
-  cursor: pointer; padding: 2px 4px; flex-shrink: 0;
-  transition: color .1s;
+  margin-left: auto; color: var(--text-mid); font-size: 12px;
+  cursor: pointer; padding: 3px 8px; flex-shrink: 0;
+  background: rgba(41,98,255,0.1); border-radius: 3px;
+  border: 1px solid var(--border-2);
+  transition: color .1s, background .1s;
 }
-.lbExpand:hover { color: var(--accent); }
+.lbExpand:hover { color: var(--accent); background: rgba(41,98,255,0.2); }
 .lbDetail {
   padding: 4px 8px 6px 28px;
   background: rgba(10,14,20,0.5);

@@ -231,8 +231,7 @@ let state = {
 function applyMarket(mktId) {
   const m = MARKETS[mktId] || MARKETS.empire;
   selectedMkt = mktId;
-  const bn=document.querySelector('.brandName'); if(bn) bn.textContent = m.name || 'EPC';
-  const _bsym=$('brandSymbol'); if(_bsym) _bsym.textContent = (m.id||'EPC').toUpperCase().slice(0,4);
+  const bn=$('brandName')||document.querySelector('.brandName'); if(bn) bn.textContent = m.name + ' 市場';
   state.sigma         = m.sigma;
   state.drift         = m.drift;
   state.basePrice     = m.base;
@@ -265,9 +264,7 @@ function resetGameState() {
    ============================================================ */
 const $ = id => document.getElementById(id);
 function fmt(n) {
-  if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2) + 'M';
-  if (Math.abs(n) >= 1e4) return (n/1e3).toFixed(1) + 'K';
-  return Math.round(n).toLocaleString();
+  return n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
 function pulseStr(p) { return 'DAY ' + String(p).padStart(4,'0'); }
 function currentPulse() { return Math.floor(state.tick * PULSE_PER_TICK); }
@@ -285,7 +282,7 @@ function toast(msg, cls='') {
    SEED-BASED PRNG (synchronized price across all clients)
    ============================================================ */
 const GAME_EPOCH_MS  = 1748736000000; // 2025-06-01 00:00 UTC — fixed cross-device reference
-const PULSE_MS       = 5000;           // 1 K-bar = 5 real seconds (25 ticks)
+const PULSE_MS       = 10000;          // 1 K-bar = 10 real seconds (50 ticks)
 const TICKS_PER_BAR  = PULSE_MS / TICK_MS; // 25 ticks per K-bar
 const HISTORY_BARS   = 60;             // show up to 60 K-bars of history = 1500 ticks
 // Seed window: anyone opening within the same SEED_PERIOD_MS sees an identical chart.
@@ -719,7 +716,7 @@ function renderTimeAxis(candles, cw) {
     const x = i * cw + cw / 2;
     const step = Math.max(1, Math.floor(candles.length / 5));
     if (i % step !== 0 && i !== candles.length - 1) return;
-    if (x - lastX < MIN_GAP || x < 20) return;
+    if (x - lastX < MIN_GAP) return;
     lastX = x;
     const sp = document.createElement('span');
     sp.textContent = 'D' + String(k.startPulse).padStart(4, '0');
@@ -768,6 +765,9 @@ function placeLimitOrder(side) {
   const raw  = parseFloat($('limitPriceInput')?.value);
   if (isNaN(raw)||raw<=0){toast('目標價無效');playSfx('reject');return;}
   const lp   = +raw.toFixed(2);
+  const cp   = currentPrice();
+  if (side==='buy'  && lp >= cp){toast('委買價需低於即時價 '+cp.toFixed(2));playSfx('reject');return;}
+  if (side==='sell' && lp <= cp){toast('委賣價需高於即時價 '+cp.toFixed(2));playSfx('reject');return;}
   if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
   state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
   addLog(`${pulseStr(currentPulse())} 委託${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
@@ -1166,7 +1166,7 @@ let globeDrag  = false, globeLastX = 0, globeLastY = 0;
 let globeSpinX = 0, globeSpinY = 0.003;
 let selectedMktHover = null;
 
-const MARKET_LIST = ['empire','tokyo','brazil','riyadh','seoul'];
+const MARKET_LIST = ['empire','tokyo'];
 
 function latLngToXYZ(lat, lng, r) {
   const phi   = (90 - lat) * Math.PI / 180;
@@ -1528,16 +1528,17 @@ function showNicknameScreen() {
 function saveMarketState(mktId) {
   const cur = state.prices.length ? state.prices[state.prices.length-1].p : state.basePrice;
   const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
-  all[mktId] = {
-    cash: state.cash, shares: state.shares,
-    avgCost: state.avgCost, realizedPnl: state.realizedPnl,
-    lastPrice: cur, savedAt: Date.now()
-  };
+  all[mktId] = { shares:state.shares, avgCost:state.avgCost, realizedPnl:state.realizedPnl, lastPrice:cur };
   localStorage.setItem('empire_mkt_states', JSON.stringify(all));
+  localStorage.setItem('empire_global_cash', String(state.cash));
 }
 function loadMarketState(mktId) {
   const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
   return all[mktId] || null;
+}
+function loadGlobalCash() {
+  const v = parseFloat(localStorage.getItem('empire_global_cash'));
+  return isNaN(v) ? 10000 : v;
 }
 function clearMarketState(mktId) {
   const all = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
@@ -1577,12 +1578,13 @@ function startGame(loadedState) {
     }
   } else {
     const saved = loadMarketState(selectedMkt);
+    const globalCash = loadGlobalCash();
     if (saved) {
-      state.cash = saved.cash; state.shares = saved.shares;
-      state.avgCost = saved.avgCost; state.realizedPnl = saved.realizedPnl;
+      state.cash = globalCash;
+      state.shares = saved.shares; state.avgCost = saved.avgCost; state.realizedPnl = saved.realizedPnl;
     } else {
-      state.cash = 10000; state.shares = 0;
-      state.avgCost = 0;  state.realizedPnl = 0;
+      state.cash = globalCash; state.shares = 0;
+      state.avgCost = 0; state.realizedPnl = 0;
     }
   }
   state.pendingOrders = []; state.orderHistory = [];
@@ -1715,7 +1717,10 @@ function init() {
 
   // Globe enter button
   const geb = $('globeEnterBtn');
-  if (geb) geb.addEventListener('click', showNicknameScreen);
+  if (geb) geb.addEventListener('click', () => {
+    if (nickname) { startGame(null); }
+    else { showNicknameScreen(); }
+  });
 
   // Nickname screen
   const nickInput  = $('nickInput');
@@ -1871,6 +1876,7 @@ function init() {
     clearInterval(_tickInterval); _tickInterval=null;
     clearMarketState(selectedMkt);
     state.cash=10000; state.shares=0; state.avgCost=0; state.realizedPnl=0;
+    localStorage.setItem('empire_global_cash','10000');
     state.pendingOrders=[]; state.orderHistory=[]; state.forecastEvents=[];
     $('winScreen').classList.add('hidden');
     LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0;

@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=32">
+<link rel="stylesheet" href="./style.css?v=33">
 </head>
 <body>
 
@@ -50,8 +50,7 @@
   <header id="topBar">
     <div class="brandRow">
       <div class="brand">
-        <span class="brandSymbol">EPC</span>
-        <span class="brandName">Empire 指數</span>
+        <span class="brandName" id="brandName">Empire 幣 市場</span>
         <span class="dot live"></span>
         <span class="brandPulse" id="pulseLabel">DAY 0000</span>
       </div>
@@ -204,7 +203,7 @@
     <div class="qtyRow">
       <button class="qtyBtn" data-qty="10">10</button>
       <button class="qtyBtn active" data-qty="100">100</button>
-      <button class="qtyBtn" data-qty="1000">1K</button>
+      <button class="qtyBtn" data-qty="1000">1000</button>
       <button class="qtyBtn" data-qty="max">全倉</button>
       <input id="qtyInput" type="number" min="1" inputmode="numeric" placeholder="自訂">
     </div>
@@ -247,6 +246,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="./game.js?v=32"></script>
+<script src="./game.js?v=33"></script>
 </body>
 </html>
