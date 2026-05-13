@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;900&family=JetBrains+Mono:wght@300;500;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./style.css?v=49">
+<link rel="stylesheet" href="./style.css?v=50">
 </head>
 <body>
 
@@ -25,6 +25,10 @@
     <div id="globeMarketInfo" class="globeMarketInfo hidden"></div>
     <button id="globeEnterBtn" class="globeEnterBtn hidden">進入市場</button>
     <button id="glbCancelBtn" class="glbCancelBtn hidden">以新身分開始</button>
+    <div id="glbSumActions" class="glbSumActions hidden">
+      <button id="glbSumEnterBtn" class="globeEnterBtn" style="pointer-events:auto">載入遊戲</button>
+      <button id="glbSumCancelBtn" class="glbCancelBtn" style="pointer-events:auto;margin-top:8px">以新身分開始</button>
+    </div>
     <div id="globeCodeRow" class="globeCodeRow">
       <input id="globeCodeInput" class="globeCodeInput" type="text" placeholder="存檔碼 EPC.xxxxx"><button id="globePasteBtn" class="globePasteBtn">貼上</button><button id="globeCodeLoadBtn" class="globeCodeLoadBtn">載入</button>
     </div>
@@ -276,6 +280,6 @@
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script src="./game.js?v=49"></script>
+<script src="./game.js?v=50"></script>
 </body>
 </html>
