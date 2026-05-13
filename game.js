@@ -1015,22 +1015,21 @@ function syncToFirebase() {
 
   const _allMs = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
   _allMs[selectedMkt] = { shares: state.shares, lastPrice: cur };
-  // Per-market: position value only (shares × price), NO cash included
+  // All markets: position value (shares × price), 0 if no position
   let _totalPos = 0, _mktEqs = {};
   MARKET_LIST.forEach(id => {
     const ms = _allMs[id];
-    if (ms && ms.shares > 0) {
-      const posVal = ms.shares * (ms.lastPrice || MARKETS[id].base);
-      _totalPos += posVal;
-      _mktEqs[id] = Math.round(posVal);
-    }
+    const posVal = ms && ms.shares > 0 ? ms.shares * (ms.lastPrice || MARKETS[id].base) : 0;
+    _totalPos += posVal;
+    _mktEqs[id] = Math.round(posVal);
   });
-  const _totalEq = state.cash + _totalPos; // global cash + all positions
+  const _totalEq = state.cash + _totalPos;
   db.ref('empire/players/' + playerId).set({
     nickname: nickname || '匿名',
     equity: Math.round(_totalEq),
     market: selectedMkt,
-    markets: _mktEqs,  // only shows markets with open positions
+    cash: Math.round(state.cash),
+    markets: _mktEqs,
     lastSeen: Date.now(),
   }).catch(()=>{});
 }
@@ -1073,12 +1072,23 @@ function renderLeaderboard(players) {
     const isSelf = p.id === playerId;
     const mkt = MARKETS[p.market];
     const mktColor = mkt ? mkt.color : '#fff';
-    const hasDetail = p.markets && Object.keys(p.markets).length > 0;
-    const mktRows = hasDetail ? MARKET_LIST.filter(id=>p.markets[id]).map(id => {
-      const m=MARKETS[id]; const eq=p.markets[id];
-      return `<div class="lbMktRow"><span class="lbMktDot" style="background:${m.color}"></span>`+
-             `<span class="lbMktName">${m.name}</span><span class="lbMktEq">${fmt(eq)}</span></div>`;
-    }).join('') : '';
+    const hasDetail = p.markets != null;
+    let mktRows = '';
+    if (hasDetail) {
+      // Cash row first
+      if (p.cash != null) {
+        mktRows += `<div class="lbMktRow"><span class="lbMktDot" style="background:var(--text-mute)"></span>`+
+                   `<span class="lbMktName">現金</span><span class="lbMktEq">${fmt(p.cash)}</span></div>`;
+      }
+      // All markets
+      MARKET_LIST.forEach(id => {
+        const m = MARKETS[id]; if(!m) return;
+        const posVal = p.markets[id] || 0;
+        const cls = posVal > 0 ? '' : ' lbMktDim';
+        mktRows += `<div class="lbMktRow${cls}"><span class="lbMktDot" style="background:${m.color}"></span>`+
+                   `<span class="lbMktName">${m.name}</span><span class="lbMktEq">${posVal>0?fmt(posVal):'--'}</span></div>`;
+      });
+    }
     return `<div class="lbRow${isSelf?' self':''}" data-lb-id="${p.id}">
       <span class="lbRank">${i+1}</span>
       <span class="lbName">${p.nickname||'匿名'}</span>
