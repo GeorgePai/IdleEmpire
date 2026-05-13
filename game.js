@@ -1650,37 +1650,47 @@ function startGame(loadedState) {
 /* ============================================================
    RETURN TO GLOBE
    ============================================================ */
+let _globeSummaryLoaded = null;
 function showGlobeSummary(loaded) {
-  const el = $('globeLoadedSummary'); if(!el) { startGame(loaded); return; }
-  const ms = loaded.ms || {};
+  // Hide market info card and default enter button
+  const info = $('globeMarketInfo'); if(info) info.classList.add('hidden');
+  const geb  = $('globeEnterBtn');  if(geb)  geb.classList.add('hidden');
+  const el   = $('globeLoadedSummary'); if(!el){ startGame(loaded); return; }
+
+  const ms  = loaded.ms || {};
   const cash = loaded.ca || 10000;
-  let posHtml = '';
-  MARKET_LIST.forEach(id => {
-    const m = MARKETS[id]; if(!m) return;
-    const s = ms[id];
-    const posVal = s && s.sh > 0 ? s.sh * (s.lp || m.base) : 0;
-    if (posVal > 0) posHtml += `<span style="color:${m.color}">${m.name} $${posVal.toFixed(0)}</span>`;
-  });
   const totalPos = MARKET_LIST.reduce((t,id)=>{
     const s=ms[id]; return t+(s&&s.sh>0?s.sh*(s.lp||MARKETS[id].base):0);
   },0);
   const totalEq = cash + totalPos;
+  const f = n => '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  // Build per-market rows only for markets with positions
+  let mktRows = '';
+  MARKET_LIST.forEach(id => {
+    const m=MARKETS[id]; if(!m) return;
+    const s=ms[id]; const pv=s&&s.sh>0?s.sh*(s.lp||m.base):0;
+    if(pv>0) mktRows += `<div class="glbSumMktRow"><span class="glbSumMktDot" style="background:${m.color}"></span><span class="glbSumMktName">${m.name}</span><span class="glbSumMktVal">${f(pv)}</span></div>`;
+  });
+
   el.innerHTML = `
-    <div class="glbSumNick">${loaded.n||'玩家'}</div>
-    <div class="glbSumEq">$${totalEq.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-    <div class="glbSumSub">現金 $${cash.toFixed(2)}${posHtml?' · '+posHtml:''}</div>
-    <button id="glbSumEnter" class="globeEnterBtn" style="margin-top:10px;position:static;display:inline-flex">進入市場</button>
+    <div class="glbSumCard">
+      <div class="glbSumNick">${loaded.n||'玩家'}</div>
+      <div class="glbSumEq">${f(totalEq)}</div>
+      <div class="glbSumDetail">
+        <div class="glbSumMktRow"><span class="glbSumMktDot" style="background:var(--text-dim)"></span><span class="glbSumMktName">現金</span><span class="glbSumMktVal">${f(cash)}</span></div>
+        ${mktRows}
+      </div>
+      <button id="glbSumEnter" class="glbSumBtn">進入市場</button>
+    </div>
   `;
   el.classList.remove('hidden');
-  selectMarket(selectedMkt);
-  const enterBtn = el.querySelector('#glbSumEnter');
-  if (enterBtn) enterBtn.addEventListener('click', () => {
+  _globeSummaryLoaded = loaded;
+  el.querySelector('#glbSumEnter').addEventListener('click', () => {
     el.classList.add('hidden');
     startGame(_globeSummaryLoaded);
   });
-  _globeSummaryLoaded = loaded;
 }
-let _globeSummaryLoaded = null;
 
 function returnToGlobe() {
   saveMarketState(selectedMkt);
