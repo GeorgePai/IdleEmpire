@@ -1727,13 +1727,9 @@ function startGame(loadedState) {
    ============================================================ */
 let _globeSummaryLoaded = null;
 function showGlobeSummary(loaded) {
-  // Hide market info card and default enter button
-  const info = $('globeMarketInfo'); if(info) info.classList.add('hidden');
-  const geb  = $('globeEnterBtn');  if(geb)  geb.classList.add('hidden');
-  const el   = $('globeLoadedSummary'); if(!el){ startGame(loaded); return; }
+  const el = $('globeLoadedSummary'); if(!el){ startGame(loaded); return; }
 
   const ms  = loaded.ms || {};
-  // cash lives in the active-market slot of ms (v3 format)
   const activeMktMs = ms[loaded.m||'empire'] || ms[MARKET_LIST[0]] || {};
   const cash = activeMktMs.cash ?? 10000;
   const totalPos = MARKET_LIST.reduce((t,id)=>{
@@ -1742,7 +1738,6 @@ function showGlobeSummary(loaded) {
   const totalEq = cash + totalPos;
   const f = n => '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  // Build per-market rows only for markets with positions
   let mktRows = '';
   MARKET_LIST.forEach(id => {
     const m=MARKETS[id]; if(!m) return;
@@ -1750,6 +1745,7 @@ function showGlobeSummary(loaded) {
     if(pv>0) mktRows += `<div class="glbSumMktRow"><span class="glbSumMktDot" style="background:${m.color}"></span><span class="glbSumMktName">${m.name}</span><span class="glbSumMktVal">${f(pv)}</span></div>`;
   });
 
+  // Buttons live INSIDE the card — never touch globeEnterBtn
   el.innerHTML = `
     <div class="glbSumCard">
       <div class="glbSumNick">歡迎回來 · <span class="glbSumNickHL">${loaded.n||'玩家'}</span></div>
@@ -1758,49 +1754,34 @@ function showGlobeSummary(loaded) {
         <div class="glbSumMktRow"><span class="glbSumMktDot" style="background:var(--text-dim)"></span><span class="glbSumMktName">現金</span><span class="glbSumMktVal">${f(cash)}</span></div>
         ${mktRows}
       </div>
+      <button class="glbSumBtn" id="glbSumEnterInner">載入遊戲</button>
+      <button class="glbCancelBtnInner" id="glbSumCancelInner">以新身分開始</button>
     </div>
   `;
   el.classList.remove('hidden');
   _globeSummaryLoaded = loaded;
 
-  // Bind globeEnterBtn → load game
-  const enterBtn = $('globeEnterBtn');
-  if (enterBtn) {
-    enterBtn.textContent = '載入遊戲';
-    enterBtn.style.borderColor = '#2962ff';
-    enterBtn.style.boxShadow = '0 0 20px rgba(41,98,255,0.5)';
-    enterBtn.classList.remove('hidden');
-    // Clone to remove stale listeners
-    const freshEnter = enterBtn.cloneNode(true);
-    enterBtn.parentNode.replaceChild(freshEnter, enterBtn);
-    freshEnter.addEventListener('click', () => {
-      el.classList.add('hidden');
-      $('glbCancelBtn').classList.add('hidden');
-      startGame(_globeSummaryLoaded);
-    });
-  }
-  // Show static cancel button (always in DOM)
-  const cancelBtn = $('glbCancelBtn');
-  if (cancelBtn) {
-    cancelBtn.classList.remove('hidden');
-    // Re-clone to clear old listeners
-    const freshCancel = cancelBtn.cloneNode(true);
-    cancelBtn.parentNode.replaceChild(freshCancel, cancelBtn);
-    freshCancel.addEventListener('click', () => {
-      // Clear ALL saved state for a true fresh start
-      ['empire_mkt_states','empire_global_cash','empire_nick'].forEach(k=>localStorage.removeItem(k));
-      // Clear in-memory logs
-      LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0;
-      Object.keys(LOG_UNREAD).forEach(k=>LOG_UNREAD[k]=0);
-      state.pendingOrders=[]; state.orderHistory=[];
-      el.classList.add('hidden');
-      freshCancel.classList.add('hidden');
-      const eb = $('globeEnterBtn');
-      if (eb) { eb.textContent='進入市場'; eb.classList.add('hidden'); }
-      nickname='';
-      showNicknameScreen();
-    });
-  }
+  // Hide the original globeEnterBtn and glbCancelBtn (not needed)
+  const geb = $('globeEnterBtn'); if(geb) geb.classList.add('hidden');
+  const gcb = $('glbCancelBtn');  if(gcb) gcb.classList.add('hidden');
+  const gmi = $('globeMarketInfo'); if(gmi) gmi.classList.add('hidden');
+
+  el.querySelector('#glbSumEnterInner').addEventListener('click', () => {
+    el.classList.add('hidden');
+    startGame(_globeSummaryLoaded);
+  });
+
+  el.querySelector('#glbSumCancelInner').addEventListener('click', () => {
+    ['empire_mkt_states','empire_global_cash','empire_nick'].forEach(k=>localStorage.removeItem(k));
+    LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0;
+    Object.keys(LOG_UNREAD).forEach(k=>LOG_UNREAD[k]=0);
+    state.pendingOrders=[]; state.orderHistory=[];
+    el.classList.add('hidden');
+    nickname='';
+    // Restore globe to clean initial state
+    selectMarket(selectedMkt||'empire');
+    showNicknameScreen();
+  });
 }
 
 function returnToGlobe() {
