@@ -21,7 +21,9 @@ function initFirebase() {
 /* ============================================================
    PLAYER SESSION
    ============================================================ */
-let playerId    = localStorage.getItem('empire_pid') || null;
+// sessionStorage: per-tab (not shared between tabs in same browser)
+// localStorage:   per-origin (shared across all tabs) — used for nickname & market state only
+let playerId    = sessionStorage.getItem('empire_pid') || null;
 let nickname    = localStorage.getItem('empire_nick') || '';
 let lastSyncEq  = 0;
 let selectedMkt = 'empire';
@@ -29,7 +31,7 @@ let selectedMkt = 'empire';
 function ensurePlayerId() {
   if (!playerId) {
     playerId = 'p' + Math.random().toString(36).slice(2,9) + Date.now().toString(36);
-    localStorage.setItem('empire_pid', playerId);
+    sessionStorage.setItem('empire_pid', playerId); // tab-isolated
   }
   return playerId;
 }
