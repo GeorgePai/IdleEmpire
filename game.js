@@ -194,7 +194,7 @@ function decodeGameState(code) {
    ============================================================ */
 const TICK_MS          = 200;
 const PULSE_PER_TICK   = 0.2;
-const VISIBLE_CANDLES_BASE = 50;
+const VISIBLE_CANDLES_BASE = 25;
 const WIN_TARGET       = 50000;
 const PANEL_UPDATE_MS  = 2500;
 
@@ -269,7 +269,7 @@ function toast(msg) {
 const GAME_EPOCH_MS  = 1748736000000; // 2025-06-01 00:00 UTC — fixed cross-device reference
 const PULSE_MS       = 5000;           // 1 K-bar = 5 real seconds (25 ticks)
 const TICKS_PER_BAR  = PULSE_MS / TICK_MS; // 25 ticks per K-bar
-const HISTORY_BARS   = 30;             // show 30 K-bars of history = 750 ticks
+const HISTORY_BARS   = 60;             // show up to 60 K-bars of history = 1500 ticks
 // Seed window: anyone opening within the same SEED_PERIOD_MS sees an identical chart.
 // 1 h window → reliable cross-device sync; max fast-forward ≈ 17 250 steps (< 10 ms).
 const SEED_PERIOD_MS = 3600 * 1000;
@@ -474,7 +474,7 @@ function buildCandles(period) {
       const g = fresh.get(gi);
       closed.push({ ...g, startPulse: Math.floor(g.startTick * PULSE_PER_TICK) });
     }
-    if (closed.length > 600) closed.splice(0, closed.length - 600);
+    if (closed.length > 1200) closed.splice(0, closed.length - 1200);
     _closedUpToGi[period] = currentGi - 1;
   }
 
