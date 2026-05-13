@@ -750,7 +750,7 @@ function placeLimitOrder(side) {
   if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
   state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
   addLog(`${pulseStr(currentPulse())} 掛${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
-  playSfx('orderPlace'); updateOrdersUI(); renderLog();
+  markOrderDirty(); playSfx('orderPlace'); updateOrdersUI(); renderLog();
 }
 
 function checkPendingOrders(p) {
@@ -762,7 +762,7 @@ function checkPendingOrders(p) {
         return false;
       }
       addLog(`${pulseStr(currentPulse())} 限買觸發 ${o.qty}@${p.toFixed(2)}`, 'fill');
-      executeMarketBuy(o.qty, o.limitPrice); playSfx('limitFill');
+      markOrderDirty(); executeMarketBuy(o.qty, o.limitPrice); playSfx('limitFill');
       state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
       return false;
     }
@@ -773,7 +773,7 @@ function checkPendingOrders(p) {
         return false;
       }
       addLog(`${pulseStr(currentPulse())} 限賣觸發 ${o.qty}@${p.toFixed(2)}`, 'fill');
-      executeMarketSell(o.qty, o.limitPrice); playSfx('limitFill');
+      markOrderDirty(); executeMarketSell(o.qty, o.limitPrice); playSfx('limitFill');
       state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
       return false;
     }
@@ -798,24 +798,21 @@ function sell() {
 /* ============================================================
    LOG
    ============================================================ */
-const LOG_ALL=[], LOG_TRADE=[], LOG_NEWS=[], LOG_ORDER=[];
+const LOG_ALL=[], LOG_TRADE=[], LOG_NEWS=[];
 const LOG_UNREAD={all:0,trade:0,news:0,order:0};
 function addLog(text, type) {
   const entry = { text, type };
   LOG_ALL.unshift(entry);
   if (type==='buy'||type==='sell'||type==='trade'||type==='fill') LOG_TRADE.unshift(entry);
   if (type==='news'||type==='event') LOG_NEWS.unshift(entry);
-  if (type==='trade'||type==='fill'||type==='order-cancel') LOG_ORDER.unshift(entry);
   if (LOG_ALL.length>200)    LOG_ALL.pop();
   if (LOG_TRADE.length>100)  LOG_TRADE.pop();
   if (LOG_NEWS.length>100)   LOG_NEWS.pop();
-  if (LOG_ORDER.length>100)  LOG_ORDER.pop();
   // Unread tracking for inactive tabs
   const at = state.logTab;
   if (at!=='all')   LOG_UNREAD.all++;
   if (at!=='trade' && (type==='buy'||type==='sell'||type==='trade'||type==='fill')) LOG_UNREAD.trade++;
   if (at!=='news'  && (type==='news'||type==='event')) LOG_UNREAD.news++;
-  if (at!=='order' && (type==='trade'||type==='fill'||type==='order-cancel')) LOG_UNREAD.order++;
   renderLogDots();
 }
 function renderLogDots() {
@@ -830,30 +827,44 @@ function renderLogDots() {
     }
   });
 }
+function markOrderDirty() {
+  if (state.logTab !== 'order') { LOG_UNREAD.order++; renderLogDots(); }
+}
 function renderLog() {
-  // Pending orders bar (always rendered regardless of tab)
-  const pd = $('logPending');
-  if (pd) {
-    pd.innerHTML = state.pendingOrders.length
-      ? state.pendingOrders.map(o =>
-          `<div class="logPendingRow"><span class="lpSide ${o.side}">${o.side==='buy'?'限買':'限賣'}</span>`+
-          `<span class="lpQty">${o.qty}</span><span class="lpAt">@${o.limitPrice}</span>`+
-          `<button class="lpCancel" data-idx="${state.pendingOrders.indexOf(o)}">✕</button></div>`
-        ).join('')
-      : '';
-    // Wire cancel buttons (re-attach each render)
-    pd.querySelectorAll('.lpCancel').forEach(btn => {
+  const tab = state.logTab;
+
+  // ── 委託 tab: live interactive pending orders ──────────────────────────────
+  if (tab === 'order') {
+    const el = $('logOrder'); if (!el) return;
+    if (!state.pendingOrders.length) {
+      el.innerHTML = '<div class="commitEmpty">目前無委託單</div>';
+      return;
+    }
+    el.innerHTML = state.pendingOrders.map((o, idx) =>
+      `<div class="commitRow">
+        <span class="lpSide ${o.side}">${o.side==='buy'?'限買':'限賣'}</span>
+        <span class="commitQty">${o.qty} 股</span>
+        <span class="commitAt">@ ${o.limitPrice}</span>
+        <span class="commitPulse">${pulseStr(o.placedPulse)}</span>
+        <button class="commitCancel" data-idx="${idx}">取消</button>
+      </div>`
+    ).join('');
+    el.querySelectorAll('.commitCancel').forEach(btn => {
       btn.addEventListener('click', e => {
         const idx = parseInt(e.currentTarget.dataset.idx);
         if (!isNaN(idx) && idx >= 0 && idx < state.pendingOrders.length) {
+          const o = state.pendingOrders[idx];
+          addLog(`${pulseStr(currentPulse())} 取消委託 ${o.side==='buy'?'限買':'限賣'} ${o.qty}@${o.limitPrice}`, 'order-cancel');
           state.pendingOrders.splice(idx, 1);
-          renderLog(); drawCandleChart();
+          renderLog(); drawCandleChart(); updateOrdersUI();
         }
       });
     });
+    return;
   }
-  const tab = state.logTab;
-  const list = tab==='trade' ? LOG_TRADE : tab==='news' ? LOG_NEWS : tab==='order' ? LOG_ORDER : LOG_ALL;
+
+  // ── Other tabs: scrolling log ──────────────────────────────────────────────
+  const list = tab==='trade' ? LOG_TRADE : tab==='news' ? LOG_NEWS : LOG_ALL;
   const el = $('log'+tab.charAt(0).toUpperCase()+tab.slice(1)) || $('logAll');
   if (!el) return;
   el.innerHTML = list.slice(0,80).map(e =>
@@ -1710,7 +1721,7 @@ function init() {
     state.cash=10000; state.shares=0; state.avgCost=0; state.realizedPnl=0;
     state.pendingOrders=[]; state.orderHistory=[]; state.forecastEvents=[];
     $('winScreen').classList.add('hidden');
-    LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0; LOG_ORDER.length=0;
+    LOG_ALL.length=0; LOG_TRADE.length=0; LOG_NEWS.length=0;
     Object.keys(LOG_UNREAD).forEach(k=>LOG_UNREAD[k]=0); renderLogDots();
     initSyncedPrices(selectedMkt); startTick(); maybeUpdatePanel(true);
   });
