@@ -749,7 +749,8 @@ function placeLimitOrder(side) {
   const lp   = +raw.toFixed(2);
   if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
   state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
-  addLog(`${pulseStr(currentPulse())} 掛${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
+  addLog(`${pulseStr(currentPulse())} 委託${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
+  toast(`委託成功：${side==='buy'?'買':'賣'} ${qty} 股 @ ${lp}`);
   markOrderDirty(); playSfx('orderPlace'); updateOrdersUI(); renderLog();
 }
 
@@ -757,22 +758,24 @@ function checkPendingOrders(p) {
   state.pendingOrders = state.pendingOrders.filter(o => {
     if (o.side==='buy'&&p<=o.limitPrice) {
       if (o.qty*o.limitPrice>state.cash) {
-        toast('現金不足，掛單取消');
+        toast('委託取消：現金不足');
         addLog(`${pulseStr(currentPulse())} 限買取消 ${o.qty}@${o.limitPrice} [現金不足]`, 'order-cancel');
         return false;
       }
-      addLog(`${pulseStr(currentPulse())} 限買觸發 ${o.qty}@${p.toFixed(2)}`, 'fill');
+      addLog(`${pulseStr(currentPulse())} 委買成交 ${o.qty}@${p.toFixed(2)}`, 'fill');
+      toast(`委託成交：買 ${o.qty} 股 @ ${p.toFixed(2)}`);
       markOrderDirty(); executeMarketBuy(o.qty, o.limitPrice); playSfx('limitFill');
       state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
       return false;
     }
     if (o.side==='sell'&&p>=o.limitPrice) {
       if (o.qty>state.shares) {
-        toast('持倉不足，掛單取消');
+        toast('委託取消：持倉不足');
         addLog(`${pulseStr(currentPulse())} 限賣取消 ${o.qty}@${o.limitPrice} [持倉不足]`, 'order-cancel');
         return false;
       }
-      addLog(`${pulseStr(currentPulse())} 限賣觸發 ${o.qty}@${p.toFixed(2)}`, 'fill');
+      addLog(`${pulseStr(currentPulse())} 委賣成交 ${o.qty}@${p.toFixed(2)}`, 'fill');
+      toast(`委託成交：賣 ${o.qty} 股 @ ${p.toFixed(2)}`);
       markOrderDirty(); executeMarketSell(o.qty, o.limitPrice); playSfx('limitFill');
       state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
       return false;
@@ -854,9 +857,10 @@ function renderLog() {
         const idx = parseInt(e.currentTarget.dataset.idx);
         if (!isNaN(idx) && idx >= 0 && idx < state.pendingOrders.length) {
           const o = state.pendingOrders[idx];
-          addLog(`${pulseStr(currentPulse())} 取消委託 ${o.side==='buy'?'限買':'限賣'} ${o.qty}@${o.limitPrice}`, 'order-cancel');
+          addLog(`${pulseStr(currentPulse())} 取消委託 ${o.side==='buy'?'委買':'委賣'} ${o.qty}@${o.limitPrice}`, 'order-cancel');
+          toast(`委託取消：${o.side==='buy'?'買':'賣'} ${o.qty} 股 @ ${o.limitPrice}`);
           state.pendingOrders.splice(idx, 1);
-          renderLog(); drawCandleChart(); updateOrdersUI();
+          renderLog(); updateOrdersUI();
         }
       });
     });

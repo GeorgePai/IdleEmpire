@@ -1085,12 +1085,19 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
 .commitAt   { color: var(--text); font-weight: 600; flex: 1; }
 .commitPulse{ color: var(--text-mute); font-size: 9px; }
 .commitCancel {
-  padding: 2px 8px; border-radius: 3px; border: 1px solid var(--down);
-  background: rgba(239,83,80,0.08); color: var(--down);
-  font-size: 10px; cursor: pointer; transition: background .15s;
+  padding: 4px 12px; border-radius: 4px;
+  border: none;
+  background: var(--down);
+  color: #fff;
+  font-size: 11px; font-weight: 700; cursor: pointer;
   font-family: 'Noto Sans TC', sans-serif;
+  letter-spacing: 0.03em;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.12);
+  transition: filter .1s, transform .08s;
+  flex-shrink: 0;
 }
-.commitCancel:hover { background: rgba(239,83,80,0.22); }
+.commitCancel:hover  { filter: brightness(1.18); }
+.commitCancel:active { transform: translateY(1px); box-shadow: none; }
 .commitEmpty {
   text-align: center; color: var(--text-mute); font-size: 10px;
   padding: 24px 0; font-family: 'Noto Sans TC', sans-serif;
