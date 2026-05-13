@@ -166,24 +166,35 @@ const CKEY = [83,121,197,43,167,11,251,89,137,53,223,71,179,37,241,101,
               61,233,17,149,97,211,7,163,131,47,199,73,229,113,31,191];
 
 function encodeGameState(st) {
-  const d = {
-    v:2, n:nickname.slice(0,20),
-    c:Math.round(st.cash), s:st.shares,
-    a:Math.round((st.avgCost||0)*100),
-    r:Math.round(st.realizedPnl),
-    m:selectedMkt, t:Date.now()
+  const allMs = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
+  const cur = st.prices&&st.prices.length ? st.prices[st.prices.length-1].p : state.basePrice;
+  allMs[selectedMkt] = {
+    cash: Math.round(st.cash), shares: st.shares,
+    avgCost: +(st.avgCost||0).toFixed(4),
+    realizedPnl: Math.round(st.realizedPnl), lastPrice: cur
   };
+  const d = { v:3, n:nickname.slice(0,20), m:selectedMkt, t:Date.now(), ms:allMs };
   const bytes = new TextEncoder().encode(JSON.stringify(d));
   let binary = '';
   bytes.forEach((b,i) => binary += String.fromCharCode(b ^ CKEY[i % CKEY.length]));
-  const b64 = btoa(binary).replace(/\+/g,'8').replace(/\//g,'9').replace(/=/g,'0');
-  return 'EPC-' + (b64.match(/.{1,8}/g)||[]).join('-');
+  // v3: url-safe base64 (- and _ replace + and /), no padding — avoids digit collision
+  const b64 = btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  return 'EPC.' + (b64.match(/.{1,8}/g)||[]).join('.');
 }
 
 function decodeGameState(code) {
   try {
-    if (!code.startsWith('EPC-')) return null;
-    const b64 = code.slice(4).replace(/-/g,'').replace(/8/g,'+').replace(/9/g,'/').replace(/0/g,'=');
+    code = code.trim();
+    let b64raw;
+    if (code.startsWith('EPC.')) {
+      // v3: url-safe base64 with dots
+      b64raw = code.slice(4).replace(/\./g,'').replace(/-/g,'+').replace(/_/g,'/');
+    } else if (code.startsWith('EPC-')) {
+      // v2 legacy (best-effort)
+      b64raw = code.slice(4).replace(/-/g,'').replace(/8/g,'+').replace(/9/g,'/').replace(/0/g,'=');
+    } else { return null; }
+    const pad = (4 - b64raw.length % 4) % 4;
+    const b64 = b64raw + '='.repeat(pad);
     const raw = atob(b64);
     const bytes = Uint8Array.from(raw.split('').map(c => c.charCodeAt(0)));
     const plain = new TextDecoder().decode(bytes.map((b,i) => b ^ CKEY[i % CKEY.length]));
@@ -221,6 +232,7 @@ function applyMarket(mktId) {
   const m = MARKETS[mktId] || MARKETS.empire;
   selectedMkt = mktId;
   const bn=document.querySelector('.brandName'); if(bn) bn.textContent = m.name || 'EPC';
+  const _bsym=$('brandSymbol'); if(_bsym) _bsym.textContent = (m.id||'EPC').toUpperCase().slice(0,4);
   state.sigma         = m.sigma;
   state.drift         = m.drift;
   state.basePrice     = m.base;
@@ -259,10 +271,14 @@ function fmt(n) {
 }
 function pulseStr(p) { return 'DAY ' + String(p).padStart(4,'0'); }
 function currentPulse() { return Math.floor(state.tick * PULSE_PER_TICK); }
-function toast(msg) {
+function toast(msg, cls='') {
   const t = $('toast'); if (!t) return;
-  t.textContent = msg; t.classList.remove('hidden');
-  clearTimeout(t._tid); t._tid = setTimeout(() => t.classList.add('hidden'), 2200);
+  t.className = cls;
+  t.textContent = msg;
+  clearTimeout(t._tid); clearTimeout(t._tid2);
+  void t.offsetWidth;
+  t._tid  = setTimeout(() => t.classList.add('toastOut'), 2000);
+  t._tid2 = setTimeout(() => { t.className = 'hidden'; }, 2350);
 }
 
 /* ============================================================
@@ -697,12 +713,17 @@ function drawCandleChart() {
 function renderTimeAxis(candles, cw) {
   const ax = $('timeAxis'); if (!ax) return;
   ax.innerHTML='';
-  const step = Math.max(1, Math.floor(candles.length / 5));
-  candles.forEach((k,i) => {
-    if (i % step !== 0 && i !== candles.length-1) return;
+  const MIN_GAP = 52;
+  let lastX = -MIN_GAP;
+  candles.forEach((k, i) => {
+    const x = i * cw + cw / 2;
+    const step = Math.max(1, Math.floor(candles.length / 5));
+    if (i % step !== 0 && i !== candles.length - 1) return;
+    if (x - lastX < MIN_GAP || x < 20) return;
+    lastX = x;
     const sp = document.createElement('span');
-    sp.textContent = 'D'+String(k.startPulse).padStart(4,'0');
-    sp.style.left  = (i * cw + cw/2) + 'px';
+    sp.textContent = 'D' + String(k.startPulse).padStart(4, '0');
+    sp.style.left = x + 'px';
     ax.appendChild(sp);
   });
 }
@@ -806,7 +827,7 @@ const LOG_UNREAD={all:0,trade:0,news:0,order:0};
 function addLog(text, type) {
   const entry = { text, type };
   LOG_ALL.unshift(entry);
-  if (type==='buy'||type==='sell'||type==='trade'||type==='fill') LOG_TRADE.unshift(entry);
+  if (type==='buy'||type==='sell'||type==='trade'||type==='fill'||type==='order-cancel') LOG_TRADE.unshift(entry);
   if (type==='news'||type==='event') LOG_NEWS.unshift(entry);
   if (LOG_ALL.length>200)    LOG_ALL.pop();
   if (LOG_TRADE.length>100)  LOG_TRADE.pop();
@@ -992,12 +1013,18 @@ function syncToFirebase() {
   }
   lastSyncEq = equity;
 
+  const _allMs = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
+  _allMs[selectedMkt] = { cash: state.cash, shares: state.shares, lastPrice: cur };
+  let _totalEq = 0, _mktEqs = {};
+  MARKET_LIST.forEach(id => {
+    const ms = _allMs[id];
+    if (ms) { const eq = ms.cash + ms.shares*(ms.lastPrice||MARKETS[id].base); _totalEq+=eq; _mktEqs[id]=Math.round(eq); }
+  });
   db.ref('empire/players/' + playerId).set({
     nickname: nickname || '匿名',
-    equity: Math.round(equity),
-    cash: Math.round(state.cash),
-    shares: state.shares,
+    equity: Math.round(_totalEq || equity),
     market: selectedMkt,
+    markets: _mktEqs,
     lastSeen: Date.now(),
   }).catch(()=>{});
 }
@@ -1040,13 +1067,31 @@ function renderLeaderboard(players) {
     const isSelf = p.id === playerId;
     const mkt = MARKETS[p.market];
     const mktColor = mkt ? mkt.color : '#fff';
-    return `<div class="lbRow${isSelf?' self':''}">
+    const hasDetail = p.markets && Object.keys(p.markets).length > 0;
+    const mktRows = hasDetail ? MARKET_LIST.filter(id=>p.markets[id]).map(id => {
+      const m=MARKETS[id]; const eq=p.markets[id];
+      return `<div class="lbMktRow"><span class="lbMktDot" style="background:${m.color}"></span>`+
+             `<span class="lbMktName">${m.name}</span><span class="lbMktEq">${fmt(eq)}</span></div>`;
+    }).join('') : '';
+    return `<div class="lbRow${isSelf?' self':''}" data-lb-id="${p.id}">
       <span class="lbRank">${i+1}</span>
       <span class="lbName">${p.nickname||'匿名'}</span>
-      <span class="lbMkt" style="color:${mktColor};">${mkt?mkt.name:''}</span>
+      <span class="lbMkt" style="color:${mktColor};">${mkt?mkt.name:p.market||''}</span>
       <span class="lbEq">${fmt(p.equity)}</span>
-    </div>`;
+      ${hasDetail?'<span class="lbExpand">▸</span>':''}
+    </div>${mktRows?`<div class="lbDetail hidden" data-lb-detail="${p.id}">${mktRows}</div>`:''}`;
   }).join('');
+  el.querySelectorAll('.lbExpand').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const row = e.target.closest('.lbRow');
+      const id  = row?.dataset.lbId;
+      const det = el.querySelector('[data-lb-detail="'+id+'"]');
+      if (!det) return;
+      const open = !det.classList.contains('hidden');
+      det.classList.toggle('hidden', open);
+      btn.textContent = open ? '▸' : '▾';
+    });
+  });
 }
 
 let _bcTimeout = null;
@@ -1149,38 +1194,126 @@ function projectPoint(px, py, pz, cx, cy, r) {
    CONTINENT POLYGONS (simplified lat/lng outlines)
    ============================================================ */
 const CONTINENT_POLYS = [
-  // North America
-  [[72,-140],[72,-60],[55,-55],[47,-53],[45,-67],[40,-66],[35,-76],[30,-81],[25,-80],
-   [25,-90],[18,-87],[22,-105],[28,-112],[32,-117],[38,-123],[50,-124],[60,-140]],
-  // Central America
-  [[25,-90],[20,-88],[14,-84],[8,-78],[10,-82],[14,-87]],
-  // Greenland
-  [[76,-70],[84,-35],[76,25],[65,-20],[60,-44]],
-  // South America
-  [[10,-74],[8,-62],[5,-51],[0,-50],[-5,-35],[-23,-43],[-33,-52],
-   [-55,-68],[-45,-65],[-22,-41],[5,-51]],
-  // Europe
-  [[71,28],[60,5],[51,-6],[36,-6],[36,5],[37,15],[37,28],[45,30],[55,22],[60,28]],
-  // Scandinavia
-  [[70,28],[70,31],[65,15],[60,5],[57,8],[60,11],[70,20]],
-  // British Isles
-  [[58,-5],[60,-2],[58,0],[54,-3],[51,-5],[54,-6]],
-  // Africa
-  [[37,10],[37,37],[11,44],[0,42],[-10,40],[-35,27],[-35,18],[0,-17],[15,-17]],
-  // Arabian Peninsula
-  [[30,35],[29,49],[22,60],[12,44],[15,44]],
-  // India
-  [[28,68],[28,90],[8,78],[20,73]],
-  // Asia (main)
-  [[71,60],[71,140],[55,160],[45,140],[30,120],[20,120],[10,78],[35,58],[55,58]],
-  // Indochina
-  [[20,100],[20,108],[10,108],[5,103],[15,100]],
-  // Japan
-  [[45,142],[35,130],[33,132],[38,141]],
-  // Australia
-  [[-15,130],[-15,140],[-25,153],[-38,147],[-38,114],[-22,114]],
-  // New Zealand
-  [[-35,174],[-47,168],[-47,171]],
+  // ── North America ──────────────────────────────────────────
+  [
+    [71,-141],[70,-130],[68,-120],[66,-110],[62,-95],[60,-85],[55,-80],
+    [50,-80],[47,-75],[45,-67],[44,-63],[42,-70],[41,-70],[40,-74],
+    [36,-76],[30,-81],[25,-80],[24,-82],[25,-90],[28,-97],[26,-97],
+    [22,-106],[20,-105],[15,-92],[15,-85],[10,-85],[8,-77],[10,-75],
+    [14,-87],[18,-92],[20,-90],[22,-90],[24,-95],[28,-108],[30,-115],
+    [32,-117],[34,-120],[38,-123],[42,-124],[46,-124],[48,-124],
+    [52,-128],[54,-133],[58,-137],[60,-145],[56,-155],[54,-163],
+    [58,-158],[60,-150],[62,-148],[64,-148],[66,-140],[68,-140],[71,-141]
+  ],
+  // ── Greenland ──────────────────────────────────────────────
+  [
+    [76,-73],[83,-40],[82,-18],[78,-20],[74,-18],[70,-22],[68,-28],
+    [65,-38],[64,-52],[66,-60],[70,-68],[74,-72],[76,-73]
+  ],
+  // ── South America ──────────────────────────────────────────
+  [
+    [12,-72],[10,-63],[8,-60],[5,-52],[4,-52],[2,-50],[0,-50],
+    [-4,-36],[-6,-35],[-10,-37],[-12,-40],[-16,-39],[-20,-40],
+    [-22,-41],[-24,-44],[-26,-48],[-28,-49],[-30,-51],[-32,-52],
+    [-34,-53],[-38,-57],[-40,-62],[-42,-65],[-44,-66],[-46,-66],
+    [-50,-68],[-52,-70],[-54,-68],[-55,-64],[-54,-58],[-52,-58],
+    [-48,-60],[-44,-66],[-42,-65],[-40,-62],[-38,-57],[-34,-53],
+    [-20,-40],[-10,-37],[-2,-50],[5,-52],[8,-60],[10,-63],[12,-72]
+  ],
+  // ── Europe (west) ──────────────────────────────────────────
+  [
+    [36,-6],[38,-9],[40,-8],[43,-9],[44,-8],[44,-2],[46,2],[48,2],
+    [50,2],[52,4],[53,5],[55,8],[55,12],[54,10],[53,8],[52,5],
+    [52,9],[54,10],[55,12],[56,10],[58,8],[58,12],[60,5],[58,5],
+    [56,3],[55,8],[54,10],[53,8],[52,5],[51,4],[50,2],[48,2],
+    [47,8],[44,8],[43,4],[44,2],[44,0],[42,-9],[38,-9],[36,-6]
+  ],
+  // ── Scandinavia ───────────────────────────────────────────
+  [
+    [57,8],[56,10],[56,12],[58,12],[60,5],[62,6],[64,8],[66,14],
+    [68,18],[70,22],[71,26],[70,28],[68,28],[66,24],[64,22],
+    [62,18],[60,18],[58,12],[57,8]
+  ],
+  // ── Europe (east) + Turkey ────────────────────────────────
+  [
+    [48,24],[50,24],[52,22],[54,20],[56,22],[58,24],[60,24],
+    [62,28],[60,30],[58,28],[56,24],[54,18],[52,14],[50,14],
+    [48,18],[46,18],[44,28],[40,36],[38,36],[38,26],[40,26],
+    [42,28],[44,28],[46,22],[48,24]
+  ],
+  // ── Africa ────────────────────────────────────────────────
+  [
+    [36,10],[34,10],[32,32],[28,34],[22,38],[15,42],[12,44],[11,42],
+    [12,40],[10,38],[8,44],[2,40],[0,42],[-2,40],[-4,40],[-10,38],
+    [-16,36],[-20,35],[-22,35],[-26,33],[-30,30],[-34,26],[-34,18],
+    [-32,16],[-28,16],[-24,14],[-20,14],[-16,12],[-10,14],[-6,12],
+    [-2,8],[4,2],[6,0],[4,-8],[2,-16],[4,-10],[6,-8],[8,-5],
+    [12,-16],[16,-16],[20,-17],[24,-16],[30,-12],[32,-18],[32,-10],
+    [28,32],[22,38],[15,42],[10,44],[10,42],[12,44],[15,42],[22,38],
+    [28,34],[32,32],[34,10],[36,10]
+  ],
+  // ── Middle East / Arabian Peninsula ──────────────────────
+  [
+    [30,32],[28,34],[22,38],[15,42],[12,44],[15,50],[18,56],
+    [22,60],[24,58],[26,56],[28,50],[30,48],[32,44],[34,36],
+    [36,36],[36,42],[38,44],[36,44],[34,44],[30,48],[28,50],
+    [22,60],[18,56],[15,50],[12,44],[10,44],[8,44],[10,38],
+    [12,40],[14,42],[15,42],[22,38],[28,34],[30,32]
+  ],
+  // ── Russia / Central Asia ────────────────────────────────
+  [
+    [50,14],[52,14],[54,18],[56,24],[58,28],[60,30],[62,28],[60,60],
+    [58,58],[56,58],[54,60],[52,60],[50,58],[48,54],[46,50],[44,44],
+    [44,42],[46,42],[48,46],[50,50],[52,56],[54,62],[56,64],[58,68],
+    [60,68],[62,66],[64,64],[66,62],[68,62],[70,60],[72,68],[70,72],
+    [68,76],[66,78],[64,80],[62,80],[60,78],[58,72],[56,68],[54,68],
+    [52,62],[50,60],[48,52],[46,46],[44,42],[42,44],[40,44],[38,44],
+    [36,42],[36,36],[34,36],[32,44],[30,48],[28,50],[26,56],[24,58],
+    [22,60],[18,56],[15,50],[12,44],[10,44],[8,44],[0,42],[0,50],
+    [4,52],[8,60],[10,64],[12,68],[14,72],[16,76],[18,80],[20,82],
+    [22,88],[24,90],[26,92],[28,96],[30,100],[32,104],[34,108],[36,106],
+    [38,106],[40,110],[42,130],[44,134],[46,136],[48,140],[50,140],
+    [52,142],[54,140],[56,138],[58,136],[60,132],[62,130],[64,128],
+    [66,126],[68,128],[70,128],[72,130],[74,130],[76,120],[78,110],
+    [80,100],[82,90],[80,80],[78,70],[76,64],[74,60],[72,52],[70,44],
+    [68,40],[66,38],[64,38],[62,36],[60,32],[58,28],[56,24],[54,18],
+    [52,14],[50,14]
+  ],
+  // ── South Asia (India) ────────────────────────────────────
+  [
+    [28,78],[26,82],[24,88],[22,92],[20,90],[18,84],[16,82],[14,80],
+    [10,80],[8,78],[8,76],[10,72],[12,74],[14,74],[16,74],[18,72],
+    [20,72],[22,72],[24,68],[26,64],[28,62],[28,70],[30,76],[30,78],
+    [28,78]
+  ],
+  // ── Southeast Asia ───────────────────────────────────────
+  [
+    [28,96],[26,92],[24,90],[22,96],[20,98],[18,100],[16,102],[14,102],
+    [12,104],[10,104],[6,100],[4,100],[2,102],[0,108],[2,110],[4,108],
+    [6,110],[8,116],[10,120],[12,120],[14,118],[16,116],[18,112],
+    [20,108],[22,104],[24,100],[26,98],[28,96]
+  ],
+  // ── East Asia / China / Japan area ───────────────────────
+  [
+    [52,142],[50,140],[48,140],[46,136],[44,134],[42,130],[40,120],
+    [38,120],[36,120],[34,118],[32,120],[30,122],[28,120],[26,120],
+    [24,120],[22,114],[20,110],[18,112],[22,104],[24,100],[26,98],
+    [28,96],[30,100],[32,104],[34,108],[36,106],[38,106],[40,110],
+    [42,130],[44,134],[46,136],[48,140],[50,140],[52,142]
+  ],
+  // ── Australia ────────────────────────────────────────────
+  [
+    [-16,136],[-14,136],[-14,130],[-16,122],[-20,114],[-24,114],
+    [-26,114],[-28,114],[-30,116],[-32,116],[-34,118],[-36,136],
+    [-38,140],[-38,146],[-36,150],[-34,152],[-30,154],[-26,152],
+    [-22,150],[-18,148],[-16,136]
+  ],
+  // ── Japan ─────────────────────────────────────────────────
+  [
+    [30,130],[32,130],[34,130],[36,136],[38,140],[40,140],[42,140],
+    [44,144],[42,144],[40,142],[38,140],[36,136],[34,136],[32,132],
+    [30,130]
+  ]
 ];
 
 function drawContinents(ctx, cx, cy, r) {
@@ -1429,10 +1562,19 @@ function startGame(loadedState) {
 
   if (loadedState) {
     nickname = loadedState.n || nickname;
-    state.cash        = loadedState.c || 10000;
-    state.shares      = loadedState.s || 0;
-    state.avgCost     = (loadedState.a||0) / 100;
-    state.realizedPnl = loadedState.r || 0;
+    if (loadedState.ms) {
+      // v3: restore all market states
+      localStorage.setItem('empire_mkt_states', JSON.stringify(loadedState.ms));
+      const ms = loadedState.ms[selectedMkt];
+      if (ms) {
+        state.cash = ms.cash; state.shares = ms.shares;
+        state.avgCost = ms.avgCost||0; state.realizedPnl = ms.realizedPnl||0;
+      } else { state.cash=10000; state.shares=0; state.avgCost=0; state.realizedPnl=0; }
+    } else {
+      // v2 fallback
+      state.cash = loadedState.c||10000; state.shares = loadedState.s||0;
+      state.avgCost = (loadedState.a||0)/100; state.realizedPnl = loadedState.r||0;
+    }
   } else {
     const saved = loadMarketState(selectedMkt);
     if (saved) {
