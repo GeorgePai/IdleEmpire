@@ -1699,6 +1699,12 @@ function init() {
       document.querySelectorAll('.tabBtn[data-logtab]').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
       state.logTab=b.dataset.logtab;
+      // Auto-expand panel if collapsed
+      if (!state.logExpanded) {
+        state.logExpanded = true;
+        $('logPanel').classList.add('expanded');
+        $('logPanel').classList.remove('collapsed');
+      }
       // Clear unread for this tab
       LOG_UNREAD[state.logTab]=0; renderLogDots();
       document.querySelectorAll('.logList').forEach(l=>l.classList.add('hidden'));

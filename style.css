@@ -1102,6 +1102,12 @@ input[type="number"] { user-select: text; -webkit-user-select: text; }
   text-align: center; color: var(--text-mute); font-size: 10px;
   padding: 24px 0; font-family: 'Noto Sans TC', sans-serif;
 }
+/* 委託 tab: override logList constraints so rows + buttons are always visible */
+#logOrder {
+  height: auto !important;
+  min-height: 0;
+  overflow-y: auto;
+}
 .logPendingRow {
   display: flex; align-items: center; gap: 6px;
   padding: 4px 8px; font-size: 11px;
