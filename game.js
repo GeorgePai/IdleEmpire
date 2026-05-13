@@ -778,7 +778,9 @@ function placeLimitOrder(side) {
   const cp   = currentPrice();
   if (side==='buy'  && lp >= cp){toast('委買價需低於即時價 '+cp.toFixed(2));playSfx('reject');return;}
   if (side==='buy'&&lp*qty>state.cash){toast('現金不足');playSfx('reject');return;}
-  state.pendingOrders.push({ side, qty, limitPrice:lp, placedPulse:currentPulse() });
+  const entryPrice = currentPrice();
+  const targetDir  = lp >= entryPrice ? 'up' : 'down'; // up=止盈 down=停損
+  state.pendingOrders.push({ side, qty, limitPrice:lp, entryPrice, targetDir, placedPulse:currentPulse() });
   addLog(`${pulseStr(currentPulse())} 委託${side==='buy'?'買':'賣'} ${qty}@${lp}`, 'trade');
   toast(`委託成功：${side==='buy'?'買':'賣'} ${qty} 股 @ ${lp}`);
   markOrderDirty(); playSfx('orderPlace'); updateOrdersUI(); renderLog();
@@ -798,17 +800,21 @@ function checkPendingOrders(p) {
       state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
       return false;
     }
-    if (o.side==='sell'&&p>=o.limitPrice) {
-      if (o.qty>state.shares) {
-        toast('委託取消：持倉不足');
-        addLog(`${pulseStr(currentPulse())} 限賣取消 ${o.qty}@${o.limitPrice} [持倉不足]`, 'order-cancel');
+    if (o.side==='sell') {
+      // Bidirectional: take-profit (up) fills when p>=target; stop-loss (down) fills when p<=target
+      const triggered = o.targetDir==='down' ? p<=o.limitPrice : p>=o.limitPrice;
+      if (triggered) {
+        if (o.qty>state.shares) {
+          toast('委託取消：持倉不足');
+          addLog(`${pulseStr(currentPulse())} 限賣取消 ${o.qty}@${o.limitPrice} [持倉不足]`, 'order-cancel');
+          return false;
+        }
+        addLog(`${pulseStr(currentPulse())} 委賣成交 ${o.qty}@${p.toFixed(2)}`, 'fill');
+        toast(`委託成交：賣 ${o.qty} 股 @ ${p.toFixed(2)}`);
+        markOrderDirty(); executeMarketSell(o.qty, o.limitPrice); playSfx('limitFill');
+        state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
         return false;
       }
-      addLog(`${pulseStr(currentPulse())} 委賣成交 ${o.qty}@${p.toFixed(2)}`, 'fill');
-      toast(`委託成交：賣 ${o.qty} 股 @ ${p.toFixed(2)}`);
-      markOrderDirty(); executeMarketSell(o.qty, o.limitPrice); playSfx('limitFill');
-      state.orderHistory.unshift({...o,type:'limit',filledAt:p,filledPulse:currentPulse()});
-      return false;
     }
     return true;
   });
@@ -1994,6 +2000,7 @@ function init() {
   if (nickBackBtn) nickBackBtn.addEventListener('click', () => {
     $('nicknameScreen').classList.add('hidden');
     $('globeScreen').classList.remove('hidden');
+    selectMarket(selectedMkt);  // restore enter button + market info
     animateGlobe();
   });
 
