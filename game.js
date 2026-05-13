@@ -1014,17 +1014,23 @@ function syncToFirebase() {
   lastSyncEq = equity;
 
   const _allMs = JSON.parse(localStorage.getItem('empire_mkt_states')||'{}');
-  _allMs[selectedMkt] = { cash: state.cash, shares: state.shares, lastPrice: cur };
-  let _totalEq = 0, _mktEqs = {};
+  _allMs[selectedMkt] = { shares: state.shares, lastPrice: cur };
+  // Per-market: position value only (shares × price), NO cash included
+  let _totalPos = 0, _mktEqs = {};
   MARKET_LIST.forEach(id => {
     const ms = _allMs[id];
-    if (ms) { const eq = ms.cash + ms.shares*(ms.lastPrice||MARKETS[id].base); _totalEq+=eq; _mktEqs[id]=Math.round(eq); }
+    if (ms && ms.shares > 0) {
+      const posVal = ms.shares * (ms.lastPrice || MARKETS[id].base);
+      _totalPos += posVal;
+      _mktEqs[id] = Math.round(posVal);
+    }
   });
+  const _totalEq = state.cash + _totalPos; // global cash + all positions
   db.ref('empire/players/' + playerId).set({
     nickname: nickname || '匿名',
-    equity: Math.round(_totalEq || equity),
+    equity: Math.round(_totalEq),
     market: selectedMkt,
-    markets: _mktEqs,
+    markets: _mktEqs,  // only shows markets with open positions
     lastSeen: Date.now(),
   }).catch(()=>{});
 }
